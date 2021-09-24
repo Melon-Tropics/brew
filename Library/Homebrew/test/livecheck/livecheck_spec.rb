@@ -44,6 +44,15 @@ describe Homebrew::Livecheck do
     RUBY
   end
 
+  describe "::resolve_livecheck_reference" do
+    context "when a formula/cask has a livecheck block without formula/cask methods" do
+      it "returns [nil, []]" do
+        expect(livecheck.resolve_livecheck_reference(f)).to eq([nil, []])
+        expect(livecheck.resolve_livecheck_reference(c)).to eq([nil, []])
+      end
+    end
+  end
+
   describe "::formula_name" do
     it "returns the name of the formula" do
       expect(livecheck.formula_name(f)).to eq("test")
@@ -68,13 +77,13 @@ describe Homebrew::Livecheck do
     it "returns a hash containing the livecheck status" do
       expect(livecheck.status_hash(f, "error", ["Unable to get versions"]))
         .to eq({
-                 formula:  "test",
-                 status:   "error",
-                 messages: ["Unable to get versions"],
-                 meta:     {
-                   livecheckable: true,
-                 },
-               })
+          formula:  "test",
+          status:   "error",
+          messages: ["Unable to get versions"],
+          meta:     {
+            livecheckable: true,
+          },
+        })
     end
   end
 

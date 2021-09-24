@@ -53,22 +53,6 @@ describe Cask::Cmd::Uninstall, :cask do
     expect(transmission.config.appdir.join("Caffeine.app")).not_to exist
   end
 
-  it "calls `uninstall` before removing artifacts" do
-    cask = Cask::CaskLoader.load(cask_path("with-uninstall-script-app"))
-
-    Cask::Installer.new(cask).install
-
-    expect(cask).to be_installed
-    expect(cask.config.appdir.join("MyFancyApp.app")).to exist
-
-    expect {
-      described_class.run("with-uninstall-script-app")
-    }.not_to raise_error
-
-    expect(cask).not_to be_installed
-    expect(cask.config.appdir.join("MyFancyApp.app")).not_to exist
-  end
-
   it "can uninstall Casks when the uninstall script is missing, but only when using `--force`" do
     cask = Cask::CaskLoader.load(cask_path("with-uninstall-script-app"))
 

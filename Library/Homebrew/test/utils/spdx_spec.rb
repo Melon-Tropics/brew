@@ -77,7 +77,7 @@ describe SPDX do
       expect(described_class.parse_license_expression(license_expression)).to eq [["MIT"], ["LLVM-exception"]]
     end
 
-    it "returns licenses and exceptions for compex license expressions" do
+    it "returns licenses and exceptions for complex license expressions" do
       license_expression = { any_of: [
         "MIT",
         :public_domain,
@@ -132,8 +132,16 @@ describe SPDX do
       expect(described_class.deprecated_license?("GPL-1.0")).to eq true
     end
 
+    it "returns true for deprecated license identifier with plus" do
+      expect(described_class.deprecated_license?("GPL-1.0+")).to eq true
+    end
+
     it "returns false for non-deprecated license identifier" do
       expect(described_class.deprecated_license?("MIT")).to eq false
+    end
+
+    it "returns false for non-deprecated license identifier with plus" do
+      expect(described_class.deprecated_license?("EPL-1.0+")).to eq false
     end
 
     it "returns false for invalid license identifier" do
@@ -189,7 +197,7 @@ describe SPDX do
       expect(described_class.license_expression_to_string(license_expression)).to eq "MIT with LLVM-exception"
     end
 
-    it "returns licenses and exceptions for compex license expressions" do
+    it "returns licenses and exceptions for complex license expressions" do
       license_expression = { any_of: [
         "MIT",
         :public_domain,

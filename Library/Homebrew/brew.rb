@@ -2,8 +2,6 @@
 # frozen_string_literal: true
 
 if ENV["HOMEBREW_STACKPROF"]
-  require_relative "utils/gems"
-  Homebrew.setup_gem_environment!
   require "stackprof"
   StackProf.start(mode: :wall, raw: true)
 end
@@ -93,6 +91,15 @@ begin
     internal_cmd ||= begin
       internal_dev_cmd = Commands.valid_internal_dev_cmd?(cmd)
       if internal_dev_cmd && !Homebrew::EnvConfig.developer?
+        if ENV["HOMEBREW_DEV_CMD_RUN"].blank?
+          opoo <<~MESSAGE
+            #{Tty.bold}#{cmd}#{Tty.reset} is a developer command, so
+            Homebrew's developer mode has been automatically turned on.
+            To turn developer mode off, run #{Tty.bold}brew developer off#{Tty.reset}
+
+          MESSAGE
+        end
+
         Homebrew::Settings.write "devcmdrun", true
         ENV["HOMEBREW_DEV_CMD_RUN"] = "1"
       end

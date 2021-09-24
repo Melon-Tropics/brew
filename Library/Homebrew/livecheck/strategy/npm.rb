@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 module Homebrew
@@ -17,6 +17,8 @@ module Homebrew
       #
       # @api public
       class Npm
+        extend T::Sig
+
         NICE_NAME = "npm"
 
         # The `Regexp` used to determine if the strategy applies to the URL.
@@ -29,8 +31,35 @@ module Homebrew
         #
         # @param url [String] the URL to match against
         # @return [Boolean]
+        sig { params(url: String).returns(T::Boolean) }
         def self.match?(url)
           URL_MATCH_REGEX.match?(url)
+        end
+
+        # Extracts information from a provided URL and uses it to generate
+        # various input values used by the strategy to check for new versions.
+        # Some of these values act as defaults and can be overridden in a
+        # `livecheck` block.
+        #
+        # @param url [String] the URL used to generate values
+        # @return [Hash]
+        sig { params(url: String).returns(T::Hash[Symbol, T.untyped]) }
+        def self.generate_input_values(url)
+          values = {}
+
+          match = url.match(URL_MATCH_REGEX)
+          return values if match.blank?
+
+          values[:url] = "https://www.npmjs.com/package/#{match[:package_name]}?activeTab=versions"
+
+          regex_name = Regexp.escape(T.must(match[:package_name])).gsub("\\-", "-")
+
+          # Example regexes:
+          # * `%r{href=.*?/package/example/v/(\d+(?:\.\d+)+)"}i`
+          # * `%r{href=.*?/package/@example/example/v/(\d+(?:\.\d+)+)"}i`
+          values[:regex] = %r{href=.*?/package/#{regex_name}/v/(\d+(?:\.\d+)+)"}i
+
+          values
         end
 
         # Generates a URL and regex (if one isn't provided) and passes them
@@ -39,17 +68,20 @@ module Homebrew
         # @param url [String] the URL of the content to check
         # @param regex [Regexp] a regex used for matching versions in content
         # @return [Hash]
-        def self.find_versions(url, regex = nil, &block)
-          match = url.match(URL_MATCH_REGEX)
+        sig {
+          params(
+            url:    String,
+            regex:  T.nilable(Regexp),
+            unused: T.nilable(T::Hash[Symbol, T.untyped]),
+            block:  T.nilable(
+              T.proc.params(arg0: String, arg1: Regexp).returns(T.any(String, T::Array[String], NilClass)),
+            ),
+          ).returns(T::Hash[Symbol, T.untyped])
+        }
+        def self.find_versions(url:, regex: nil, **unused, &block)
+          generated = generate_input_values(url)
 
-          page_url = "https://www.npmjs.com/package/#{match[:package_name]}?activeTab=versions"
-
-          # Example regexes:
-          # * `%r{href=.*?/package/example/v/(\d+(?:\.\d+)+)"}i`
-          # * `%r{href=.*?/package/@example/example/v/(\d+(?:\.\d+)+)"}i`
-          regex ||= %r{href=.*?/package/#{Regexp.escape(match[:package_name])}/v/(\d+(?:\.\d+)+)"}i
-
-          PageMatch.find_versions(page_url, regex, &block)
+          T.unsafe(PageMatch).find_versions(url: generated[:url], regex: regex || generated[:regex], **unused, &block)
         end
       end
     end

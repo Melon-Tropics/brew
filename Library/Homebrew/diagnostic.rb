@@ -147,6 +147,27 @@ module Homebrew
         end
       end
 
+      def broken_tap(tap)
+        return unless Utils::Git.available?
+
+        repo = HOMEBREW_REPOSITORY.dup.extend(GitRepositoryExtension)
+        return unless repo.git?
+
+        message = <<~EOS
+          #{tap.full_name} was not tapped properly! Run:
+            rm -rf "#{tap.path}"
+            brew tap #{tap.name}
+        EOS
+
+        return message if tap.remote.blank?
+
+        tap_head = tap.git_head
+        return message if tap_head.blank?
+        return if tap_head != repo.git_head
+
+        message
+      end
+
       def check_for_installed_developer_tools
         return if DevelopmentTools.installed?
 
@@ -466,7 +487,16 @@ module Homebrew
           #{HOMEBREW_PREFIX}/bin #{HOMEBREW_PREFIX}/sbin
           /Applications/Server.app/Contents/ServerRoot/usr/bin
           /Applications/Server.app/Contents/ServerRoot/usr/sbin
-        ].map(&:downcase)
+        ]
+        if OS.mac? && Hardware::CPU.physical_cpu_arm64?
+          allowlist += %W[
+            #{HOMEBREW_MACOS_ARM_DEFAULT_PREFIX}/bin
+            #{HOMEBREW_MACOS_ARM_DEFAULT_PREFIX}/sbin
+            #{HOMEBREW_DEFAULT_PREFIX}/bin
+            #{HOMEBREW_DEFAULT_PREFIX}/sbin
+          ]
+        end
+        allowlist.map!(&:downcase)
 
         paths.each do |p|
           next if allowlist.include?(p.downcase) || !File.directory?(p)
@@ -555,18 +585,20 @@ module Homebrew
       end
 
       def check_brew_git_origin
-        examine_git_origin(HOMEBREW_REPOSITORY, Homebrew::EnvConfig.brew_git_remote)
+        repo = HOMEBREW_REPOSITORY.dup.extend(GitRepositoryExtension)
+        examine_git_origin(repo, Homebrew::EnvConfig.brew_git_remote)
       end
 
-      def check_coretap_git_origin
-        examine_git_origin(CoreTap.instance.path, Homebrew::EnvConfig.core_git_remote)
+      def check_coretap_integrity
+        coretap = CoreTap.instance
+        broken_tap(coretap) || examine_git_origin(coretap.path, Homebrew::EnvConfig.core_git_remote)
       end
 
-      def check_casktap_git_origin
+      def check_casktap_integrity
         default_cask_tap = Tap.default_cask_tap
         return unless default_cask_tap.installed?
 
-        examine_git_origin(default_cask_tap.path, default_cask_tap.remote)
+        broken_tap(default_cask_tap) || examine_git_origin(default_cask_tap.path, default_cask_tap.remote)
       end
 
       sig { returns(T.nilable(String)) }
@@ -679,10 +711,17 @@ module Homebrew
 
         message = nil
 
-        {
+        repos = {
           "Homebrew/brew"          => HOMEBREW_REPOSITORY,
           "Homebrew/homebrew-core" => CoreTap.instance.path,
-        }.each do |name, path|
+        }
+
+        %w[cask cask-drivers cask-fonts cask-versions].each do |tap|
+          cask_tap = Tap.fetch "homebrew", tap
+          repos[cask_tap.full_name] = cask_tap.path if cask_tap.installed?
+        end
+
+        repos.each do |name, path|
           status = path.cd do
             `git status --untracked-files=all --porcelain 2>/dev/null`
           end
@@ -838,12 +877,12 @@ module Homebrew
       end
 
       def check_deleted_formula
-        kegs = Keg.all
-        deleted_formulae = []
-        kegs.each do |keg|
-          keg_name = keg.name
-          deleted_formulae << keg_name if Formulary.tap_paths(keg_name).blank?
-        end
+        keg_names = Keg.all.map(&:name).uniq
+
+        deleted_formulae = keg_names.map do |keg_name|
+          keg_name if Formulary.tap_paths(keg_name).blank?
+        end.compact
+
         return if deleted_formulae.blank?
 
         <<~EOS
@@ -872,7 +911,6 @@ module Homebrew
             "N/A"
           end
         end
-        add_info "Java", SystemConfig.describe_java
 
         nil
       end
@@ -962,7 +1000,7 @@ module Homebrew
       end
 
       def check_cask_xattr
-        result = system_command "/usr/bin/xattr"
+        result = system_command "/usr/bin/xattr", args: ["-h"]
 
         return if result.status.success?
 
@@ -1005,7 +1043,7 @@ module Homebrew
       end
 
       def all
-        methods.map(&:to_s).grep(/^check_/)
+        methods.map(&:to_s).grep(/^check_/).sort
       end
 
       def cask_checks

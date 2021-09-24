@@ -29,8 +29,12 @@ class Cleaner
     [@f.bin, @f.sbin, @f.lib].each { |d| clean_dir(d) if d.exist? }
 
     # Get rid of any info 'dir' files, so they don't conflict at the link stage
-    info_dir_file = @f.info/"dir"
-    observe_file_removal info_dir_file if info_dir_file.file? && !@f.skip_clean?(info_dir_file)
+    Dir.glob(@f.info/"**/dir").each do |f|
+      info_dir_file = Pathname(f)
+      observe_file_removal info_dir_file if info_dir_file.file? && !@f.skip_clean?(info_dir_file)
+    end
+
+    rewrite_shebangs
 
     prune
   end
@@ -115,6 +119,24 @@ class Cleaner
           odebug "Fixing #{path} permissions from #{old_perms.to_s(8)} to #{perms.to_s(8)}" if perms != old_perms
         end
         path.chmod perms
+      end
+    end
+  end
+
+  def rewrite_shebangs
+    require "language/perl"
+    require "utils/shebang"
+
+    basepath = @f.prefix.realpath
+    basepath.find do |path|
+      Find.prune if @f.skip_clean? path
+
+      next if path.directory? || path.symlink?
+
+      begin
+        Utils::Shebang.rewrite_shebang Language::Perl::Shebang.detected_perl_shebang(@f), path
+      rescue ShebangDetectionError
+        break
       end
     end
   end

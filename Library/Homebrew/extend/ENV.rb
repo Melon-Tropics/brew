@@ -35,7 +35,7 @@ module EnvActivation
     params(
       env:          T.nilable(String),
       cc:           T.nilable(String),
-      build_bottle: T.nilable(T::Boolean),
+      build_bottle: T::Boolean,
       bottle_arch:  T.nilable(String),
       _block:       T.proc.returns(T.untyped),
     ).returns(T.untyped)
@@ -57,7 +57,7 @@ module EnvActivation
 
   sig { params(key: T.any(String, Symbol)).returns(T::Boolean) }
   def sensitive?(key)
-    key.match?(/(cookie|key|token|password)/i)
+    key.match?(/(cookie|key|token|password|passphrase)/i)
   end
 
   sig { returns(T::Hash[String, String]) }

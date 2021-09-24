@@ -21,13 +21,13 @@ module Commands
     "uninstal"    => "uninstall",
     "rm"          => "uninstall",
     "remove"      => "uninstall",
-    "configure"   => "diy",
     "abv"         => "info",
     "dr"          => "doctor",
     "--repo"      => "--repository",
     "environment" => "--env",
     "--config"    => "config",
     "-v"          => "--version",
+    "lc"          => "livecheck",
     "tc"          => "typecheck",
   }.freeze
 
@@ -108,10 +108,10 @@ module Commands
   end
 
   def official_external_commands_paths(quiet:)
-    %w[bundle services test-bot].map do |cmd|
-      tap = Tap.fetch("Homebrew/#{cmd}")
+    OFFICIAL_CMD_TAPS.flat_map do |tap_name, cmds|
+      tap = Tap.fetch(tap_name)
       tap.install(quiet: quiet) unless tap.installed?
-      external_ruby_v2_cmd_path(cmd)
+      cmds.map(&method(:external_ruby_v2_cmd_path)).compact
     end
   end
 
@@ -175,10 +175,12 @@ module Commands
     path = self.path(command)
     return if path.blank?
 
-    if cmd_parser = Homebrew::CLI::Parser.from_cmd_path(path)
-      cmd_parser.processed_options.map do |short, long, _, desc|
+    if (cmd_parser = Homebrew::CLI::Parser.from_cmd_path(path))
+      cmd_parser.processed_options.map do |short, long, _, desc, hidden|
+        next if hidden
+
         [long || short, desc]
-      end
+      end.compact
     else
       options = []
       comment_lines = path.read.lines.grep(/^#:/)
@@ -198,7 +200,7 @@ module Commands
     path = self.path(command)
     return if path.blank?
 
-    if cmd_parser = Homebrew::CLI::Parser.from_cmd_path(path)
+    if (cmd_parser = Homebrew::CLI::Parser.from_cmd_path(path))
       if short
         cmd_parser.description.split(".").first
       else

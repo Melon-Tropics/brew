@@ -1,15 +1,6 @@
 # typed: false
 # frozen_string_literal: true
 
-# Silence compatibility warning.
-begin
-  old_verbosity = $VERBOSE
-  $VERBOSE = nil
-  require "parser/current"
-ensure
-  $VERBOSE = old_verbosity
-end
-
 require "extend/string"
 require "rubocops/shared/helper_functions"
 
@@ -155,7 +146,7 @@ module RuboCop
 
       # Returns the formula tap.
       def formula_tap
-        return unless match_obj = @file_path.match(%r{/(homebrew-\w+)/})
+        return unless (match_obj = @file_path.match(%r{/(homebrew-\w+)/}))
 
         match_obj[1]
       end

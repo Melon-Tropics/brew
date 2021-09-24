@@ -65,19 +65,33 @@ module Homebrew
         run_shellcheck(shell_files, output_type)
       end
 
+      shfmt_result = if ruby_files.any? && shell_files.none?
+        true
+      else
+        run_shfmt(shell_files, fix: fix)
+      end
+
       if output_type == :json
         Offenses.new(rubocop_result + shellcheck_result)
       else
-        rubocop_result && shellcheck_result
+        rubocop_result && shellcheck_result && shfmt_result
       end
     end
+
+    RUBOCOP = (HOMEBREW_LIBRARY_PATH/"utils/rubocop.rb").freeze
 
     def run_rubocop(files, output_type,
                     fix: false, except_cops: nil, only_cops: nil, display_cop_names: false, reset_cache: false,
                     debug: false, verbose: false)
       Homebrew.install_bundler_gems!
-      require "rubocop"
-      require "rubocops"
+
+      require "warnings"
+
+      Warnings.ignore :parser_syntax do
+        require "rubocop"
+      end
+
+      require "rubocops/all"
 
       args = %w[
         --force-exclusion
@@ -134,11 +148,6 @@ module Homebrew
 
       FileUtils.rm_rf cache_env["XDG_CACHE_HOME"] if reset_cache
 
-      ruby_args = [
-        "-S",
-        "rubocop",
-      ].compact.freeze
-
       case output_type
       when :print
         args << "--debug" if debug
@@ -149,11 +158,11 @@ module Homebrew
 
         args << "--color" if Tty.color?
 
-        system cache_env, RUBY_PATH, *ruby_args, *args
+        system cache_env, RUBY_PATH, RUBOCOP, *args
         $CHILD_STATUS.success?
       when :json
         result = system_command RUBY_PATH,
-                                args: [*ruby_args, "--format", "json", *args],
+                                args: [RUBOCOP, "--format", "json", *args],
                                 env:  cache_env
         json = json_result!(result)
         json["files"]
@@ -161,26 +170,9 @@ module Homebrew
     end
 
     def run_shellcheck(files, output_type)
-      shellcheck   = Formula["shellcheck"].opt_bin/"shellcheck" if Formula["shellcheck"].any_version_installed?
-      shellcheck ||= which("shellcheck")
-      shellcheck ||= which("shellcheck", ENV["HOMEBREW_PATH"])
-      shellcheck ||= begin
-        ohai "Installing `shellcheck` for shell style checks..."
-        safe_system HOMEBREW_BREW_FILE, "install", "shellcheck"
-        Formula["shellcheck"].opt_bin/"shellcheck"
-      end
+      files = shell_scripts if files.blank?
 
-      if files.empty?
-        files = [
-          HOMEBREW_BREW_FILE,
-          # TODO: HOMEBREW_REPOSITORY/"completions/bash/brew",
-          *Pathname.glob("#{HOMEBREW_LIBRARY}/Homebrew/*.sh"),
-          *Pathname.glob("#{HOMEBREW_LIBRARY}/Homebrew/cmd/*.sh"),
-          *Pathname.glob("#{HOMEBREW_LIBRARY}/Homebrew/utils/*.sh"),
-        ]
-      end
-
-      args = ["--shell=bash", "--", *files] # TODO: Add `--enable=all` to check for more problems.
+      args = ["--shell=bash", "--enable=all", "--external-sources", "--source-path=#{HOMEBREW_LIBRARY}", "--", *files]
 
       case output_type
       when :print
@@ -226,6 +218,27 @@ module Homebrew
       end
     end
 
+    def run_shfmt(files, fix: false)
+      files = shell_scripts if files.blank?
+      # Do not format completions and Dockerfile
+      files.delete(HOMEBREW_REPOSITORY/"completions/bash/brew")
+      files.delete(HOMEBREW_REPOSITORY/"Dockerfile")
+
+      # shfmt options:
+      #   -i 2     : indent by 2 spaces
+      #   -ci      : indent switch cases
+      #   -ln bash : language variant to parse ("bash")
+      #   -w       : write result to file instead of stdout (inplace fixing)
+      # "--" is needed for `utils/shfmt.sh`
+      args = ["-i", "2", "-ci", "-ln", "bash", "--", *files]
+
+      # Do inplace fixing
+      args.unshift("-w") if fix # need to add before "--"
+
+      system shfmt, *args
+      $CHILD_STATUS.success?
+    end
+
     def json_result!(result)
       # An exit status of 1 just means violations were found; other numbers mean
       # execution errors.
@@ -233,6 +246,49 @@ module Homebrew
       result.assert_success! if !(0..1).cover?(result.status.exitstatus) || result.stdout.length < 2
 
       JSON.parse(result.stdout)
+    end
+
+    def shell_scripts
+      [
+        HOMEBREW_BREW_FILE,
+        HOMEBREW_REPOSITORY/"completions/bash/brew",
+        HOMEBREW_REPOSITORY/"Dockerfile",
+        *HOMEBREW_LIBRARY.glob("Homebrew/*.sh"),
+        *HOMEBREW_LIBRARY.glob("Homebrew/shims/**/*").map(&:realpath).uniq
+                         .reject { |path| path.directory? || path.basename.to_s == "cc" },
+        *HOMEBREW_LIBRARY.glob("Homebrew/{dev-,}cmd/*.sh"),
+        *HOMEBREW_LIBRARY.glob("Homebrew/{cask/,}utils/*.sh"),
+      ]
+    end
+
+    def shellcheck
+      # Always use the latest brewed shellcheck
+      unless Formula["shellcheck"].latest_version_installed?
+        if Formula["shellcheck"].any_version_installed?
+          ohai "Upgrading `shellcheck` for shell style checks..."
+          safe_system HOMEBREW_BREW_FILE, "upgrade", "shellcheck"
+        else
+          ohai "Installing `shellcheck` for shell style checks..."
+          safe_system HOMEBREW_BREW_FILE, "install", "shellcheck"
+        end
+      end
+
+      Formula["shellcheck"].opt_bin/"shellcheck"
+    end
+
+    def shfmt
+      # Always use the latest brewed shfmt
+      unless Formula["shfmt"].latest_version_installed?
+        if Formula["shfmt"].any_version_installed?
+          ohai "Upgrading `shfmt` to format shell scripts..."
+          safe_system HOMEBREW_BREW_FILE, "upgrade", "shfmt"
+        else
+          ohai "Installing `shfmt` to format shell scripts..."
+          safe_system HOMEBREW_BREW_FILE, "install", "shfmt"
+        end
+      end
+
+      HOMEBREW_LIBRARY/"Homebrew/utils/shfmt.sh"
     end
 
     # Collection of style offenses.

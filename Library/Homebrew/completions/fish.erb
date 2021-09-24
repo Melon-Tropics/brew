@@ -9,7 +9,7 @@
 #     compare with already documented commands.
 # - For other changes: Edit this file.
 #
-# When done, regenerate the completions by running `brew man`.
+# When done, regenerate the completions by running `brew generate-man-completions`.
 %>
 # Fish shell completions for Homebrew
 
@@ -74,7 +74,7 @@ end
 
 # This can be used to match any given option against the given list of arguments:
 # * to add condition on interdependent options
-# * to ddd condition on mutually exclusive options
+# * to add condition on mutually exclusive options
 #
 # Usage examples (for `completion -n '...'`):
 # * `__fish_brew_opt -s --long` returns true if _either_ `-s` _or_ `--long` is present
@@ -162,7 +162,7 @@ function __fish_brew_suggest_commands -d "Lists all commands names, including al
     end
 end
 
-function __fish_brew_suggest_diagnostic_check -d "List available diagnostic checks"
+function __fish_brew_suggest_diagnostic_checks -d "List available diagnostic checks"
     brew doctor --list-checks
 end
 

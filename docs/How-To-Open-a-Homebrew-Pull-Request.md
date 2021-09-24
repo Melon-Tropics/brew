@@ -15,7 +15,7 @@ Depending on the change you want to make, you need to send the pull request to t
   * This creates a personal remote repository that you can push to. This is needed because only Homebrew maintainers have push access to the main repositories.
 2. Change to the directory containing your Homebrew installation:
     ```sh
-    cd $(brew --repository)
+    cd "$(brew --repository)"
     ```
 3. Add your pushable forked repository as a new remote:
     ```sh
@@ -29,7 +29,7 @@ Depending on the change you want to make, you need to send the pull request to t
   * This creates a personal remote repository that you can push to. This is needed because only Homebrew maintainers have push access to the main repositories.
 2. Change to the directory containing Homebrew formulae:
     ```sh
-    cd $(brew --repository homebrew/core)
+    cd "$(brew --repository homebrew/core)"
     ```
 3. Add your pushable forked repository as a new remote:
     ```sh
@@ -60,7 +60,7 @@ To make a new branch and submit it for review, create a GitHub pull request with
     brew tests
     brew install --build-from-source <CHANGED_FORMULA>
     brew test <CHANGED_FORMULA>
-    brew audit --strict <CHANGED_FORMULA>
+    brew audit --strict --online <CHANGED_FORMULA>
     ```
 6. [Make a separate commit](Formula-Cookbook.md#commit) for each changed formula with `git add` and `git commit`.
   * Please note that our preferred commit message format for simple version updates is "`<FORMULA_NAME> <NEW_VERSION>`", e.g. "`source-highlight 3.1.8`".

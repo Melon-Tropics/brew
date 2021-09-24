@@ -23,6 +23,7 @@ describe Tap do
   end
 
   def setup_tap_files
+    formula_file.dirname.mkpath
     formula_file.write <<~RUBY
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
@@ -41,6 +42,8 @@ describe Tap do
     JSON
 
     %w[audit_exceptions style_exceptions].each do |exceptions_directory|
+      (path/exceptions_directory).mkpath
+
       (path/"#{exceptions_directory}/formula_list.json").write <<~JSON
         [ "foo", "bar" ]
       JSON
@@ -205,18 +208,58 @@ describe Tap do
     end
   end
 
+  describe "#remote_repo" do
+    it "returns the remote https repository" do
+      setup_git_repo
+
+      expect(homebrew_foo_tap.remote_repo).to eq("Homebrew/homebrew-foo")
+      expect { described_class.new("Homebrew", "bar").remote_repo }.to raise_error(TapUnavailableError)
+
+      services_tap = described_class.new("Homebrew", "services")
+      services_tap.path.mkpath
+      services_tap.path.cd do
+        system "git", "init"
+        system "git", "remote", "add", "origin", "https://github.com/Homebrew/homebrew-bar"
+      end
+      expect(services_tap.remote_repo).to eq("Homebrew/homebrew-bar")
+    end
+
+    it "returns the remote ssh repository" do
+      setup_git_repo
+
+      expect(homebrew_foo_tap.remote_repo).to eq("Homebrew/homebrew-foo")
+      expect { described_class.new("Homebrew", "bar").remote_repo }.to raise_error(TapUnavailableError)
+
+      services_tap = described_class.new("Homebrew", "services")
+      services_tap.path.mkpath
+      services_tap.path.cd do
+        system "git", "init"
+        system "git", "remote", "add", "origin", "git@github.com:Homebrew/homebrew-bar"
+      end
+      expect(services_tap.remote_repo).to eq("Homebrew/homebrew-bar")
+    end
+
+    it "returns nil if the Tap is not a Git repository" do
+      expect(homebrew_foo_tap.remote_repo).to be nil
+    end
+
+    it "returns nil if Git is not available" do
+      setup_git_repo
+      allow(Utils::Git).to receive(:available?).and_return(false)
+      expect(homebrew_foo_tap.remote_repo).to be nil
+    end
+  end
+
   specify "Git variant" do
     touch path/"README"
     setup_git_repo
 
     expect(homebrew_foo_tap.git_head).to eq("0453e16c8e3fac73104da50927a86221ca0740c2")
-    expect(homebrew_foo_tap.git_short_head).to eq("0453")
     expect(homebrew_foo_tap.git_last_commit).to match(/\A\d+ .+ ago\Z/)
-    expect(homebrew_foo_tap.git_last_commit_date).to eq("2017-01-22")
   end
 
   specify "#private?" do
-    skip "HOMEBREW_GITHUB_API_TOKEN is required" unless GitHub.api_credentials
+    skip "HOMEBREW_GITHUB_API_TOKEN is required" unless GitHub::API.credentials
     expect(homebrew_foo_tap).to be_private
   end
 
@@ -476,6 +519,7 @@ describe Tap do
     specify "files" do
       path = Tap::TAP_DIRECTORY/"homebrew/homebrew-core"
       formula_file = core_tap.formula_dir/"foo.rb"
+      core_tap.formula_dir.mkpath
       formula_file.write <<~RUBY
         class Foo < Formula
           url "https://brew.sh/foo-1.0.tar.gz"
@@ -491,6 +535,7 @@ describe Tap do
         style_exceptions/formula_hash.json
         pypi_formula_mappings.json
       ].each do |file|
+        (path/file).dirname.mkpath
         (path/file).write formula_list_file_json
       end
 

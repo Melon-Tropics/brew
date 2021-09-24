@@ -21,7 +21,6 @@ module Homebrew
       @new_formula = options[:new_formula] && !@versioned_formula
       @strict = options[:strict]
       @online = options[:online]
-      @build_stable = options[:build_stable]
       @git = options[:git]
       @display_cop_names = options[:display_cop_names]
       @only = options[:only]
@@ -121,10 +120,12 @@ module Homebrew
     end
 
     def audit_formula_name
+      name = formula.name
+
+      problem "Formula name '#{name}' must not contain uppercase letters." if name != name.downcase
+
       return unless @strict
       return unless @core_tap
-
-      name = formula.name
 
       problem "'#{name}' is not allowed in homebrew/core." if MissingFormula.disallowed_reason(name)
 
@@ -133,7 +134,7 @@ module Homebrew
         return
       end
 
-      if oldname = CoreTap.instance.formula_renames[name]
+      if (oldname = CoreTap.instance.formula_renames[name])
         problem "'#{name}' is reserved as the old name of #{oldname} in homebrew/core."
         return
       end
@@ -234,6 +235,7 @@ module Homebrew
              dep_f.keg_only? &&
              dep_f.keg_only_reason.provided_by_macos? &&
              dep_f.keg_only_reason.applicable? &&
+             formula.requirements.none?(LinuxRequirement) &&
              !tap_audit_exception(:provided_by_macos_depends_on_allowlist, dep.name)
             new_formula_problem(
               "Dependency '#{dep.name}' is provided by macOS; " \
@@ -261,7 +263,8 @@ module Homebrew
 
           next unless @core_tap
 
-          if self.class.aliases.include?(dep.name)
+          # we want to allow uses_from_macos for aliases but not bare dependencies
+          if self.class.aliases.include?(dep.name) && spec.uses_from_macos_names.exclude?(dep.name)
             problem "Dependency '#{dep.name}' is an alias; use the canonical name '#{dep.to_formula.full_name}'."
           end
 
@@ -282,7 +285,7 @@ module Homebrew
 
       # The number of conflicts on Linux is absurd.
       # TODO: remove this and check these there too.
-      return if OS.linux?
+      return if OS.linux? && !Homebrew::EnvConfig.simulate_macos_on_linux?
 
       recursive_runtime_formulae = formula.runtime_formula_dependencies(undeclared: false)
       version_hash = {}
@@ -312,15 +315,38 @@ module Homebrew
     end
 
     def audit_conflicts
-      formula.conflicts.each do |c|
-        Formulary.factory(c.name)
+      tap = formula.tap
+      formula.conflicts.each do |conflict|
+        conflicting_formula = Formulary.factory(conflict.name)
+        next if tap != conflicting_formula.tap
+
+        problem "Formula should not conflict with itself" if formula == conflicting_formula
+
+        if tap.formula_renames.key?(conflict.name) || tap.aliases.include?(conflict.name)
+          problem "Formula conflict should be declared using " \
+                  "canonical name (#{conflicting_formula.name}) instead of #{conflict.name}"
+        end
+
+        reverse_conflict_found = false
+        conflicting_formula.conflicts.each do |reverse_conflict|
+          reverse_conflict_formula = Formulary.factory(reverse_conflict.name)
+          if tap.formula_renames.key?(reverse_conflict.name) || tap.aliases.include?(reverse_conflict.name)
+            problem "Formula #{conflicting_formula.name} conflict should be declared using " \
+                    "canonical name (#{reverse_conflict_formula.name}) instead of #{reverse_conflict.name}"
+          end
+
+          reverse_conflict_found ||= reverse_conflict_formula == formula
+        end
+        unless reverse_conflict_found
+          problem "Formula #{conflicting_formula.name} should also have a conflict declared with #{formula.name}"
+        end
       rescue TapFormulaUnavailableError
         # Don't complain about missing cross-tap conflicts.
         next
       rescue FormulaUnavailableError
-        problem "Can't find conflicting formula #{c.name.inspect}."
+        problem "Can't find conflicting formula #{conflict.name.inspect}."
       rescue TapFormulaAmbiguityError, TapFormulaWithOldnameAmbiguityError
-        problem "Ambiguous conflicting formula #{c.name.inspect}."
+        problem "Ambiguous conflicting formula #{conflict.name.inspect}."
       end
     end
 
@@ -339,16 +365,36 @@ module Homebrew
       end
     end
 
+    def audit_glibc
+      return if formula.name != "glibc"
+      return unless @core_tap
+
+      version = formula.version.to_s
+      return if version == OS::CI_GLIBC_VERSION
+
+      problem "The glibc version must be #{version}, as this is the version used by our CI on Linux. " \
+              "Glibc is for users who have a system Glibc with a lower version, " \
+              "which allows them to use our Linux bottles, which were compiled against system Glibc on CI."
+    end
+
+    ELASTICSEARCH_KIBANA_RELICENSED_VERSION = "7.11"
+
+    def audit_elasticsearch_kibana
+      return if formula.name != "elasticsearch" && formula.name != "kibana"
+      return unless @core_tap
+      return if formula.version < Version.new(ELASTICSEARCH_KIBANA_RELICENSED_VERSION)
+
+      problem "Elasticsearch and Kibana were relicensed to a non-open-source license from version 7.11. " \
+              "They must not be upgraded to version 7.11 or newer."
+    end
+
     def audit_versioned_keg_only
       return unless @versioned_formula
       return unless @core_tap
 
       if formula.keg_only?
         return if formula.keg_only_reason.versioned_formula?
-        if formula.name.start_with?("openssl", "libressl") &&
-           formula.keg_only_reason.by_macos?
-          return
-        end
+        return if formula.name.start_with?("openssl", "libressl") && formula.keg_only_reason.by_macos?
       end
 
       return if tap_audit_exception :versioned_keg_only_allowlist, formula.name
@@ -367,10 +413,21 @@ module Homebrew
 
       return unless DevelopmentTools.curl_handles_most_https_certificates?
 
-      if http_content_problem = curl_check_http_content(homepage,
-                                                        user_agents:   [:browser, :default],
-                                                        check_content: true,
-                                                        strict:        @strict)
+      use_homebrew_curl = false
+      %w[Stable HEAD].each do |name|
+        spec_name = name.downcase.to_sym
+        next unless (spec = formula.send(spec_name))
+
+        use_homebrew_curl = spec.using == :homebrew_curl
+        break if use_homebrew_curl
+      end
+
+      if (http_content_problem = curl_check_http_content(homepage,
+                                                         "homepage URL",
+                                                         user_agents:       [:browser, :default],
+                                                         check_content:     true,
+                                                         strict:            @strict,
+                                                         use_homebrew_curl: use_homebrew_curl))
         problem http_content_problem
       end
     end
@@ -389,13 +446,16 @@ module Homebrew
 
     def audit_bottle_disabled
       return unless formula.bottle_disabled?
-      return if formula.bottle_unneeded?
 
-      problem "Unrecognized bottle modifier" unless formula.bottle_disable_reason.valid?
-
-      return unless @core_tap
-
-      problem "Formulae in homebrew/core should not use `bottle :disabled`"
+      if !formula.bottle_disable_reason.valid?
+        problem "Unrecognized bottle modifier"
+      elsif @core_tap
+        if formula.bottle_unneeded?
+          problem "Formulae in homebrew/core should not use `bottle :unneeded`"
+        else
+          problem "Formulae in homebrew/core should not use `bottle :disabled`"
+        end
+      end
     end
 
     def audit_github_repository_archived
@@ -472,9 +532,19 @@ module Homebrew
 
       %w[Stable HEAD].each do |name|
         spec_name = name.downcase.to_sym
-        next unless spec = formula.send(spec_name)
+        next unless (spec = formula.send(spec_name))
 
-        ra = ResourceAuditor.new(spec, spec_name, online: @online, strict: @strict).audit
+        except = @except.to_a
+        if spec_name == :head &&
+           tap_audit_exception(:head_non_default_branch_allowlist, formula.name, spec.specs[:branch])
+          except << "head_branch"
+        end
+
+        ra = ResourceAuditor.new(
+          spec, spec_name,
+          online: @online, strict: @strict, only: @only, except: except,
+          use_homebrew_curl: spec.using == :homebrew_curl
+        ).audit
         ra.problems.each do |message|
           problem "#{name}: #{message}"
         end
@@ -482,7 +552,10 @@ module Homebrew
         spec.resources.each_value do |resource|
           problem "Resource name should be different from the formula name" if resource.name == formula.name
 
-          ra = ResourceAuditor.new(resource, spec_name, online: @online, strict: @strict).audit
+          ra = ResourceAuditor.new(
+            resource, spec_name,
+            online: @online, strict: @strict, only: @only, except: @except
+          ).audit
           ra.problems.each do |message|
             problem "#{name} resource #{resource.name.inspect}: #{message}"
           end
@@ -497,14 +570,6 @@ module Homebrew
         )
       end
 
-      if stable = formula.stable
-        version = stable.version
-        problem "Stable: version (#{version}) is set to a string without a digit" if version.to_s !~ /\d/
-        if version.to_s.start_with?("HEAD")
-          problem "Stable: non-HEAD version name (#{version}) should not begin with HEAD"
-        end
-      end
-
       return unless @core_tap
 
       if formula.head && @versioned_formula &&
@@ -516,7 +581,14 @@ module Homebrew
       return unless stable
       return unless stable.url
 
-      stable_version_string = stable.version.to_s
+      version = stable.version
+      problem "Stable: version (#{version}) is set to a string without a digit" if version.to_s !~ /\d/
+
+      stable_version_string = version.to_s
+      if stable_version_string.start_with?("HEAD")
+        problem "Stable: non-HEAD version name (#{stable_version_string}) should not begin with HEAD"
+      end
+
       stable_url_version = Version.parse(stable.url)
       stable_url_minor_version = stable_url_version.minor.to_i
 
@@ -538,6 +610,9 @@ module Homebrew
         version_prefix = stable.version.major_minor
         return if tap_audit_exception :gnome_devel_allowlist, formula.name, version_prefix
         return if stable_url_version < Version.create("1.0")
+        # All minor versions are stable in the new GNOME version scheme (which starts at version 40.0)
+        # https://discourse.gnome.org/t/new-gnome-versioning-scheme/4235
+        return if stable_url_version >= Version.create("40.0")
         return if stable_url_minor_version.even?
 
         problem "#{stable.version} is a development release"
@@ -717,11 +792,9 @@ module Homebrew
 
       methods.map(&:to_s).grep(/^audit_/).each do |audit_method_name|
         name = audit_method_name.delete_prefix("audit_")
-        if only_audits
-          next unless only_audits.include?(name)
-        elsif except_audits
-          next if except_audits.include?(name)
-        end
+        next if only_audits&.exclude?(name)
+        next if except_audits&.include?(name)
+
         send(audit_method_name)
       end
     end

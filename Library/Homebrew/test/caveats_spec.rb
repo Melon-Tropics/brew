@@ -114,6 +114,34 @@ describe Caveats do
         expect(caveats).to include(f.plist_manual)
       end
 
+      it "gives information about service" do
+        f = formula do
+          url "foo-1.0"
+          service do
+            run [bin/"php", "test"]
+          end
+        end
+        caveats = described_class.new(f).caveats
+
+        expect(f.service?).to eq(true)
+        expect(caveats).to include("#{f.bin}/php test")
+        expect(caveats).to include("background service")
+      end
+
+      it "wraps multi-word service parameters" do
+        f = formula do
+          url "foo-1.0"
+          service do
+            run [bin/"nginx", "-g", "daemon off;"]
+          end
+        end
+        caveats = described_class.new(f).caveats
+
+        expect(f.service?).to eq(true)
+        expect(caveats).to include("#{f.bin}/nginx -g 'daemon off;'")
+        expect(caveats).to include("background service")
+      end
+
       it "warns about brew failing under tmux" do
         f = formula do
           url "foo-1.0"
@@ -121,7 +149,7 @@ describe Caveats do
             "plist_test.plist"
           end
         end
-        ENV["TMUX"] = "1"
+        ENV["HOMEBREW_TMUX"] = "1"
         allow(Homebrew).to receive(:_system).with("/usr/bin/pbpaste").and_return(false)
         caveats = described_class.new(f).caveats
 
@@ -176,7 +204,7 @@ describe Caveats do
       end
     end
 
-    context "shell completions" do
+    describe "shell completions" do
       let(:f) {
         formula do
           url "foo-1.0"

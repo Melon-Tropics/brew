@@ -42,7 +42,7 @@ module PyPI
       @name = package_string
       @name, @version = @name.split("==") if @name.include? "=="
 
-      return unless match = @name.match(/^(.*?)\[(.+)\]$/)
+      return unless (match = @name.match(/^(.*?)\[(.+)\]$/))
 
       @name = match[1]
       @extras = match[2].split ","
@@ -182,7 +182,7 @@ module PyPI
 
     extra_packages = (extra_packages || []).map { |p| Package.new p }
     exclude_packages = (exclude_packages || []).map { |p| Package.new p }
-    exclude_packages += %W[#{main_package.name} argparse pip setuptools wheel wsgiref].map { |p| Package.new p }
+    exclude_packages += %W[#{main_package.name} argparse pip setuptools wsgiref].map { |p| Package.new p }
     # remove packages from the exclude list if we've explicitly requested them as an extra package
     exclude_packages.delete_if { |package| extra_packages.include?(package) }
 
@@ -195,7 +195,7 @@ module PyPI
       input_packages.each do |existing_package|
         if existing_package.same_package?(extra_package) && existing_package.version != extra_package.version
           odie "Conflicting versions specified for the `#{extra_package.name}` package: "\
-                "#{existing_package.version}, #{extra_package.version}"
+               "#{existing_package.version}, #{extra_package.version}"
         end
       end
 
@@ -212,7 +212,7 @@ module PyPI
     odie '"pipgrip" must be installed (`brew install pipgrip`)' unless @pipgrip_installed
 
     ohai "Retrieving PyPI dependencies for \"#{input_packages.join(" ")}\"..." if !print_only && !silent
-    command = [Formula["pipgrip"].bin/"pipgrip", "--json", "--no-cache-dir", *input_packages.map(&:to_s)]
+    command = [Formula["pipgrip"].opt_bin/"pipgrip", "--json", "--no-cache-dir", *input_packages.map(&:to_s)]
     pipgrip_output = Utils.popen_read(*command)
     unless $CHILD_STATUS.success?
       odie <<~EOS

@@ -8,6 +8,10 @@ on:
         description: Pull request number
         required: true
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   vendor-gems:
     if: >
@@ -28,6 +32,10 @@ jobs:
         uses: Homebrew/actions/git-user-config@master
         with:
           username: BrewTestBot
+      - name: Set up commit signing
+        uses: Homebrew/actions/setup-commit-signing@master
+        with:
+          signing_key: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY }}
       - name: Check out pull request
         id: checkout
         run: |
@@ -39,14 +47,16 @@ jobs:
           gem_name="$(echo "${branch}" | sed -E 's|.*/||;s|(.*)-.*$|\1|')"
           echo "::set-output name=gem_name::${gem_name}"
         env:
-          GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Vendor Gems
         env:
           GEM_NAME: ${{ steps.checkout.outputs.gem_name }}
+          HOMEBREW_GPG_PASSPHRASE: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
         run: |
           set -u
 
-          if [[ "${GEM_NAME}" == 'sorbet' ]]; then
+          if [[ "${GEM_NAME}" == 'sorbet' ]]
+          then
             brew vendor-gems --update sorbet,sorbet-runtime
           else
             brew vendor-gems
@@ -54,11 +64,14 @@ jobs:
       - name: Update RBI files
         env:
           GEM_NAME: ${{ steps.checkout.outputs.gem_name }}
+          HOMEBREW_GPG_PASSPHRASE: ${{ secrets.BREWTESTBOT_GPG_SIGNING_SUBKEY_PASSPHRASE }}
         run: |
           set -u
 
-          if brew typecheck --update --fail-if-not-changed; then
-            if git add Library/Homebrew/sorbet; then
+          if brew typecheck --update --fail-if-not-changed
+          then
+            if git add Library/Homebrew/sorbet
+            then
               git commit -m "Update RBI files for ${GEM_NAME}."
             fi
 
@@ -67,6 +80,6 @@ jobs:
       - name: Push to pull request
         uses: Homebrew/actions/git-try-push@master
         with:
-          token: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
+          token: ${{ secrets.HOMEBREW_GITHUB_PUBLIC_REPO_TOKEN }}
           branch: ${{ steps.checkout.outputs.branch }}
           force: true

@@ -4,11 +4,11 @@
 require "cask/audit"
 
 describe Cask::Audit, :cask do
-  def include_msg?(messages, msg)
+  def include_msg?(problems, msg)
     if msg.is_a?(Regexp)
-      Array(messages).any? { |m| m =~ msg }
+      Array(problems).any? { |problem| problem[:message] =~ msg }
     else
-      Array(messages).include?(msg)
+      Array(problems).any? { |problem| problem[:message] == msg }
     end
   end
 
@@ -315,7 +315,7 @@ describe Cask::Audit, :cask do
         end
       end
 
-      context "when cask token is in tap_migrations.json" do
+      context "when cask token is in tap_migrations.json and" do
         let(:cask_token) { "token-migrated" }
         let(:tap) { Tap.fetch("homebrew/cask") }
 
@@ -324,7 +324,7 @@ describe Cask::Audit, :cask do
           allow(cask).to receive(:tap).and_return(tap)
         end
 
-        context "and `new_cask` is true" do
+        context "when `new_cask` is true" do
           let(:new_cask) { true }
 
           it "fails" do
@@ -332,7 +332,7 @@ describe Cask::Audit, :cask do
           end
         end
 
-        context "and `new_cask` is false" do
+        context "when `new_cask` is false" do
           let(:new_cask) { false }
 
           it "does not fail" do
@@ -408,6 +408,35 @@ describe Cask::Audit, :cask do
         let(:cask_token) { "with-allow-untrusted" }
 
         it { is_expected.to fail_with(message) }
+      end
+    end
+
+    describe "livecheck should be skipped" do
+      let(:online) { true }
+      let(:message) { /Version '[^']*' differs from '[^']*' retrieved by livecheck\./ }
+
+      context "when the Cask has a livecheck block using skip" do
+        let(:cask_token) { "livecheck/livecheck-skip" }
+
+        it { is_expected.not_to fail_with(message) }
+      end
+
+      context "when the Cask is discontinued" do
+        let(:cask_token) { "livecheck/discontinued" }
+
+        it { is_expected.not_to fail_with(message) }
+      end
+
+      context "when version is :latest" do
+        let(:cask_token) { "livecheck/version-latest" }
+
+        it { is_expected.not_to fail_with(message) }
+      end
+
+      context "when url is unversioned" do
+        let(:cask_token) { "livecheck/url-unversioned" }
+
+        it { is_expected.not_to fail_with(message) }
       end
     end
 
@@ -613,46 +642,47 @@ describe Cask::Audit, :cask do
       end
     end
 
-    describe "hosting with appcast checks" do
-      let(:message) { /please add an appcast/ }
+    describe "hosting with livecheck checks" do
+      let(:message) { /please add a livecheck/ }
 
-      context "when the download does not use hosting with an appcast" do
+      context "when the download does not use hosting with a livecheck" do
         let(:cask_token) { "basic-cask" }
 
         it { is_expected.not_to fail_with(message) }
       end
 
-      context "when the download is hosted on SourceForge and has an appcast" do
+      context "when the download is hosted on SourceForge and has a livecheck" do
         let(:cask_token) { "sourceforge-with-appcast" }
 
         it { is_expected.not_to fail_with(message) }
       end
 
-      context "when the download is hosted on SourceForge and does not have an appcast" do
+      context "when the download is hosted on SourceForge and does not have a livecheck" do
         let(:cask_token) { "sourceforge-correct-url-format" }
+        let(:online) { true }
 
         it { is_expected.to fail_with(message) }
       end
 
-      context "when the download is hosted on DevMate and has an appcast" do
+      context "when the download is hosted on DevMate and has a livecheck" do
         let(:cask_token) { "devmate-with-appcast" }
 
         it { is_expected.not_to fail_with(message) }
       end
 
-      context "when the download is hosted on DevMate and does not have an appcast" do
+      context "when the download is hosted on DevMate and does not have a livecheck" do
         let(:cask_token) { "devmate-without-appcast" }
 
         it { is_expected.to fail_with(message) }
       end
 
-      context "when the download is hosted on HockeyApp and has an appcast" do
+      context "when the download is hosted on HockeyApp and has a livecheck" do
         let(:cask_token) { "hockeyapp-with-appcast" }
 
         it { is_expected.not_to fail_with(message) }
       end
 
-      context "when the download is hosted on HockeyApp and does not have an appcast" do
+      context "when the download is hosted on HockeyApp and does not have a livecheck" do
         let(:cask_token) { "hockeyapp-without-appcast" }
 
         it { is_expected.to fail_with(message) }
@@ -688,14 +718,14 @@ describe Cask::Audit, :cask do
         it { is_expected.to pass }
       end
 
-      context "when the Cask is on the denylist" do
-        context "and it's in the official Homebrew tap" do
+      context "when the Cask is on the denylist and" do
+        context "when it's in the official Homebrew tap" do
           let(:cask_token) { "adobe-illustrator" }
 
           it { is_expected.to fail_with(/#{cask_token} is not allowed: \w+/) }
         end
 
-        context "and it isn't in the official Homebrew tap" do
+        context "when it isn't in the official Homebrew tap" do
           let(:cask_token) { "pharo" }
 
           it { is_expected.to pass }
@@ -786,7 +816,7 @@ describe Cask::Audit, :cask do
     end
 
     describe "url checks" do
-      context "given a block" do
+      context "with a block" do
         let(:cask_token) { "booby-trap" }
 
         context "when loading the cask" do
@@ -795,7 +825,17 @@ describe Cask::Audit, :cask do
           end
         end
 
-        context "when doing the audit" do
+        context "when doing an offline audit" do
+          let(:online) { false }
+
+          it "does not evaluate the block" do
+            expect(run).not_to pass
+          end
+        end
+
+        context "when doing and online audit" do
+          let(:online) { true }
+
           it "evaluates the block" do
             expect(run).to fail_with(/Boom/)
           end
@@ -980,6 +1020,36 @@ describe Cask::Audit, :cask do
       end
 
       it { is_expected.to fail_with(/a homepage stanza is required/) }
+    end
+
+    context "when url is lazy" do
+      let(:strict) { true }
+      let(:cask_token) { "with-lazy" }
+      let(:cask) do
+        tmp_cask cask_token.to_s, <<~RUBY
+          cask '#{cask_token}' do
+            version '1.8.0_72,8.13.0.5'
+            sha256 '8dd95daa037ac02455435446ec7bc737b34567afe9156af7d20b2a83805c1d8a'
+            url do
+              ['https://brew.sh/foo.zip', {referer: 'https://example.com', cookies: {'foo' => 'bar'}}]
+            end
+            name 'Audit'
+            desc 'Audit Description'
+            homepage 'https://brew.sh'
+            app 'Audit.app'
+          end
+        RUBY
+      end
+
+      it { is_expected.to pass }
+
+      it "receives a referer" do
+        expect(audit.cask.url.referer).to eq "https://example.com"
+      end
+
+      it "receives cookies" do
+        expect(audit.cask.url.cookies).to eq "foo" => "bar"
+      end
     end
   end
 end

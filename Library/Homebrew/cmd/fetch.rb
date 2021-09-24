@@ -20,6 +20,8 @@ module Homebrew
         Download a bottle (if available) or source packages for <formula>e
         and binaries for <cask>s. For files, also print SHA-256 checksums.
       EOS
+      flag "--bottle-tag",
+           description: "Download a bottle for given tag."
       switch "--HEAD",
              description: "Fetch HEAD version instead of stable version."
       switch "-f", "--force",
@@ -47,12 +49,13 @@ module Homebrew
       switch "--cask", "--casks",
              description: "Treat all named arguments as casks."
 
-      conflicts "--build-from-source", "--build-bottle", "--force-bottle"
+      conflicts "--build-from-source", "--build-bottle", "--force-bottle", "--bottle-tag"
       conflicts "--cask", "--HEAD"
       conflicts "--cask", "--deps"
       conflicts "--cask", "-s"
       conflicts "--cask", "--build-bottle"
       conflicts "--cask", "--force-bottle"
+      conflicts "--cask", "--bottle-tag"
       conflicts "--formula", "--cask"
 
       named_args [:formula, :cask], min: 1
@@ -88,7 +91,9 @@ module Homebrew
         fetched_bottle = false
         if fetch_bottle?(f, args: args)
           begin
-            fetch_formula(f.bottle, args: args)
+            f.clear_cache if args.force?
+            f.fetch_bottle_tab
+            fetch_formula(f.bottle_for_tag(args.bottle_tag&.to_sym), args: args)
           rescue Interrupt
             raise
           rescue => e

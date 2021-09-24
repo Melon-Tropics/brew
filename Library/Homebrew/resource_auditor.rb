@@ -20,14 +20,24 @@ module Homebrew
       @spec_name = spec_name
       @online    = options[:online]
       @strict    = options[:strict]
-      @problems  = []
+      @only      = options[:only]
+      @except    = options[:except]
+      @use_homebrew_curl = options[:use_homebrew_curl]
+      @problems = []
     end
 
     def audit
-      audit_version
-      audit_download_strategy
-      audit_checksum
-      audit_urls
+      only_audits = @only
+      except_audits = @except
+
+      methods.map(&:to_s).grep(/^audit_/).each do |audit_method_name|
+        name = audit_method_name.delete_prefix("audit_")
+        next if only_audits&.exclude?(name)
+        next if except_audits&.include?(name)
+
+        send(audit_method_name)
+      end
+
       self
     end
 
@@ -101,11 +111,14 @@ module Homebrew
 
         strategy = DownloadStrategyDetector.detect(url, using)
         if strategy <= CurlDownloadStrategy && !url.start_with?("file")
-          # A `brew mirror`'ed URL is usually not yet reachable at the time of
-          # pull request.
-          next if url.match?(%r{^https://dl.bintray.com/homebrew/mirror/})
 
-          if http_content_problem = curl_check_http_content(url, specs: specs)
+          raise HomebrewCurlDownloadStrategyError, url if
+            strategy <= HomebrewCurlDownloadStrategy && !Formula["curl"].any_version_installed?
+
+          if (http_content_problem = curl_check_http_content(url,
+                                                             "source URL",
+                                                             specs:             specs,
+                                                             use_homebrew_curl: @use_homebrew_curl))
             problem http_content_problem
           end
         elsif strategy <= GitDownloadStrategy
@@ -117,6 +130,20 @@ module Homebrew
           problem "The URL #{url} is not a valid svn URL" unless Utils::Svn.remote_exists? url
         end
       end
+    end
+
+    def audit_head_branch
+      return unless @online
+      return unless @strict
+      return if spec_name != :head
+      return unless Utils::Git.remote_exists?(url)
+
+      branch = Utils.popen_read("git", "ls-remote", "--symref", url, "HEAD")
+                    .match(%r{ref: refs/heads/(.*?)\s+HEAD})[1]
+
+      return if branch == specs[:branch]
+
+      problem "Use `branch: \"#{branch}\"` to specify the default branch"
     end
 
     def problem(text)

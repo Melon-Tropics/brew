@@ -64,11 +64,14 @@ module Homebrew
           check_clt_minimum_version
           check_if_xcode_needs_clt_installed
           check_if_supported_sdk_available
+          check_broken_sdks
         ].freeze
       end
 
       def fatal_setup_build_environment_checks
         %w[
+          check_xcode_minimum_version
+          check_clt_minimum_version
           check_if_supported_sdk_available
         ].freeze
       end
@@ -104,11 +107,12 @@ module Homebrew
 
       def check_for_unsupported_macos
         return if Homebrew::EnvConfig.developer?
+        return if ENV["HOMEBREW_INTEGRATION_TEST"]
 
         who = +"We"
-        what = if OS::Mac.prerelease?
+        what = if OS::Mac.version.prerelease?
           "pre-release version"
-        elsif OS::Mac.outdated_release?
+        elsif OS::Mac.version.outdated_release?
           who << " (and Apple)"
           "old version"
         end
@@ -138,7 +142,7 @@ module Homebrew
           #{MacOS::Xcode.update_instructions}
         EOS
 
-        if OS::Mac.prerelease?
+        if OS::Mac.version.prerelease?
           current_path = Utils.popen_read("/usr/bin/xcode-select", "-p")
           message += <<~EOS
             If #{MacOS::Xcode.latest_version} is installed, you may need to:
@@ -198,7 +202,7 @@ module Homebrew
 
       def check_ruby_version
         return if RUBY_VERSION == HOMEBREW_REQUIRED_RUBY_VERSION
-        return if Homebrew::EnvConfig.developer? && OS::Mac.prerelease?
+        return if Homebrew::EnvConfig.developer? && OS::Mac.version.prerelease?
 
         <<~EOS
           Ruby version #{RUBY_VERSION} is unsupported on #{MacOS.version}. Homebrew
@@ -315,10 +319,18 @@ module Homebrew
         end
 
         if gettext&.linked_keg&.directory?
-          homebrew_owned = @found.all? do |path|
-            Pathname.new(path).realpath.to_s.start_with? "#{HOMEBREW_CELLAR}/gettext"
+          allowlist = ["#{HOMEBREW_CELLAR}/gettext"]
+          if Hardware::CPU.physical_cpu_arm64?
+            allowlist += %W[
+              #{HOMEBREW_MACOS_ARM_DEFAULT_PREFIX}/Cellar/gettext
+              #{HOMEBREW_DEFAULT_PREFIX}/Cellar/gettext
+            ]
           end
-          return if homebrew_owned
+
+          return if @found.all? do |path|
+            realpath = Pathname.new(path).realpath.to_s
+            allowlist.any? { |rack| realpath.start_with?(rack) }
+          end
         end
 
         inject_file_list @found, <<~EOS
@@ -424,9 +436,13 @@ module Homebrew
         locator = MacOS.sdk_locator
 
         source = if locator.source == :clt
+          return if MacOS::CLT.below_minimum_version? # Handled by other diagnostics.
+
           update_instructions = MacOS::CLT.update_instructions
-          "CLT"
+          "Command Line Tools (CLT)"
         else
+          return if MacOS::Xcode.below_minimum_version? # Handled by other diagnostics.
+
           update_instructions = MacOS::Xcode.update_instructions
           "Xcode"
         end
@@ -436,6 +452,40 @@ module Homebrew
           It is either outdated or was modified.
           Please update your #{source} or delete it if no updates are available.
           #{update_instructions}
+        EOS
+      end
+
+      # The CLT 10.x -> 11.x upgrade process on 10.14 contained a bug which broke the SDKs.
+      # Notably, MacOSX10.14.sdk would indirectly symlink to MacOSX10.15.sdk.
+      # This diagnostic was introduced to check for this and recommend a full reinstall.
+      def check_broken_sdks
+        locator = MacOS.sdk_locator
+
+        return if locator.all_sdks.all? do |sdk|
+          path_version = sdk.path.basename.to_s[MacOS::SDK::VERSIONED_SDK_REGEX, 1]
+          next true if path_version.blank?
+
+          sdk.version == MacOS::Version.new(path_version).strip_patch
+        end
+
+        if locator.source == :clt
+          source = "Command Line Tools (CLT)"
+          path_to_remove = MacOS::CLT::PKG_PATH
+          installation_instructions = MacOS::CLT.installation_instructions
+        else
+          source = "Xcode"
+          path_to_remove = MacOS::Xcode.bundle_path
+          installation_instructions = MacOS::Xcode.installation_instructions
+        end
+
+        <<~EOS
+          The contents of the SDKs in your #{source} installation do not match the SDK folder names.
+          A clean reinstall of #{source} should fix this.
+
+          Remove the broken installation before reinstalling:
+            sudo rm -rf #{path_to_remove}
+
+          #{installation_instructions}
         EOS
       end
     end

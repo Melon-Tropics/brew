@@ -4,13 +4,14 @@
 require "cli/named_args"
 
 def setup_unredable_formula(name)
-  error = FormulaUnreadableError.new(name, "testing")
+  error = FormulaUnreadableError.new(name, RuntimeError.new("testing"))
   allow(Formulary).to receive(:factory).with(name, force_bottle: false, flags: []).and_raise(error)
 end
 
 def setup_unredable_cask(name)
   error = Cask::CaskUnreadableError.new(name, "testing")
   allow(Cask::CaskLoader).to receive(:load).with(name).and_raise(error)
+  allow(Cask::CaskLoader).to receive(:load).with(name, config: nil).and_raise(error)
 
   config = instance_double(Cask::Config)
   allow(Cask::Config).to receive(:from_args).and_return(config)
@@ -178,15 +179,64 @@ describe Homebrew::CLI::NamedArgs do
   describe "#to_kegs" do
     before do
       (HOMEBREW_CELLAR/"foo/1.0").mkpath
+      (HOMEBREW_CELLAR/"foo/2.0").mkpath
       (HOMEBREW_CELLAR/"bar/1.0").mkpath
     end
 
     it "resolves kegs with #resolve_kegs" do
-      expect(described_class.new("foo", "bar").to_kegs.map(&:name)).to eq ["foo", "bar"]
+      expect(described_class.new("foo", "bar").to_kegs.map(&:name)).to eq ["foo", "foo", "bar"]
     end
 
-    it "when there are no matching kegs returns an array of Kegs" do
+    it "resolves kegs with multiple versions with #resolve_keg" do
+      expect(described_class.new("foo").to_kegs.map { |k| k.version.version.to_s }.sort).to eq ["1.0", "2.0"]
+    end
+
+    it "when there are no matching kegs returns an empty array" do
       expect(described_class.new.to_kegs).to be_empty
+    end
+  end
+
+  describe "#to_default_kegs" do
+    before do
+      (HOMEBREW_CELLAR/"foo/1.0").mkpath
+      (HOMEBREW_CELLAR/"bar/1.0").mkpath
+      linked_path = (HOMEBREW_CELLAR/"foo/2.0")
+      linked_path.mkpath
+      Keg.new(linked_path).link
+    end
+
+    it "resolves kegs with #resolve_default_keg" do
+      expect(described_class.new("foo", "bar").to_default_kegs.map(&:name)).to eq ["foo", "bar"]
+    end
+
+    it "resolves the default keg" do
+      expect(described_class.new("foo").to_default_kegs.map { |k| k.version.version.to_s }).to eq ["2.0"]
+    end
+
+    it "when there are no matching kegs returns an empty array" do
+      expect(described_class.new.to_default_kegs).to be_empty
+    end
+  end
+
+  describe "#to_latest_kegs" do
+    before do
+      (HOMEBREW_CELLAR/"foo/1.0").mkpath
+      (HOMEBREW_CELLAR/"foo/2.0").mkpath
+      (HOMEBREW_CELLAR/"bar/1.0").mkpath
+      (HOMEBREW_CELLAR/"baz/HEAD-1").mkpath
+      head2 = HOMEBREW_CELLAR/"baz/HEAD-2"
+      head2.mkpath
+      (head2/"INSTALL_RECEIPT.json").write (TEST_FIXTURE_DIR/"receipt.json").read
+    end
+
+    it "resolves the latest kegs with #resolve_latest_keg" do
+      latest_kegs = described_class.new("foo", "bar", "baz").to_latest_kegs
+      expect(latest_kegs.map(&:name)).to eq ["foo", "bar", "baz"]
+      expect(latest_kegs.map { |k| k.version.version.to_s }).to eq ["2.0", "1.0", "HEAD-2"]
+    end
+
+    it "when there are no matching kegs returns an empty array" do
+      expect(described_class.new.to_latest_kegs).to be_empty
     end
   end
 

@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 module Homebrew
@@ -21,6 +21,8 @@ module Homebrew
       #
       # @api public
       class Apache
+        extend T::Sig
+
         # The `Regexp` used to determine if the strategy applies to the URL.
         URL_MATCH_REGEX = %r{
           ^https?://www\.apache\.org
@@ -35,8 +37,41 @@ module Homebrew
         #
         # @param url [String] the URL to match against
         # @return [Boolean]
+        sig { params(url: String).returns(T::Boolean) }
         def self.match?(url)
           URL_MATCH_REGEX.match?(url)
+        end
+
+        # Extracts information from a provided URL and uses it to generate
+        # various input values used by the strategy to check for new versions.
+        # Some of these values act as defaults and can be overridden in a
+        # `livecheck` block.
+        #
+        # @param url [String] the URL used to generate values
+        # @return [Hash]
+        sig { params(url: String).returns(T::Hash[Symbol, T.untyped]) }
+        def self.generate_input_values(url)
+          values = {}
+
+          match = url.match(URL_MATCH_REGEX)
+          return values if match.blank?
+
+          # Example URL: `https://archive.apache.org/dist/example/`
+          values[:url] = "https://archive.apache.org/dist/#{match[:path]}/"
+
+          regex_prefix = Regexp.escape(match[:prefix] || "").gsub("\\-", "-")
+
+          # Use `\.t` instead of specific tarball extensions (e.g. .tar.gz)
+          suffix = match[:suffix]&.sub(Strategy::TARBALL_EXTENSION_REGEX, "\.t")
+          regex_suffix = Regexp.escape(suffix || "").gsub("\\-", "-")
+
+          # Example directory regex: `%r{href=["']?v?(\d+(?:\.\d+)+)/}i`
+          # Example file regexes:
+          # * `/href=["']?example-v?(\d+(?:\.\d+)+)\.t/i`
+          # * `/href=["']?example-v?(\d+(?:\.\d+)+)-bin\.zip/i`
+          values[:regex] = /href=["']?#{regex_prefix}v?(\d+(?:\.\d+)+)#{regex_suffix}/i
+
+          values
         end
 
         # Generates a URL and regex (if one isn't provided) and passes them
@@ -45,22 +80,20 @@ module Homebrew
         # @param url [String] the URL of the content to check
         # @param regex [Regexp] a regex used for matching versions in content
         # @return [Hash]
-        def self.find_versions(url, regex = nil, &block)
-          match = url.match(URL_MATCH_REGEX)
+        sig {
+          params(
+            url:    String,
+            regex:  T.nilable(Regexp),
+            unused: T.nilable(T::Hash[Symbol, T.untyped]),
+            block:  T.nilable(
+              T.proc.params(arg0: String, arg1: Regexp).returns(T.any(String, T::Array[String], NilClass)),
+            ),
+          ).returns(T::Hash[Symbol, T.untyped])
+        }
+        def self.find_versions(url:, regex: nil, **unused, &block)
+          generated = generate_input_values(url)
 
-          # Use `\.t` instead of specific tarball extensions (e.g. .tar.gz)
-          suffix = match[:suffix].sub(/\.t(?:ar\..+|[a-z0-9]+)$/i, "\.t")
-
-          # Example URL: `https://archive.apache.org/dist/example/`
-          page_url = "https://archive.apache.org/dist/#{match[:path]}/"
-
-          # Example directory regex: `%r{href=["']?v?(\d+(?:\.\d+)+)/}i`
-          # Example file regexes:
-          # * `/href=["']?example-v?(\d+(?:\.\d+)+)\.t/i`
-          # * `/href=["']?example-v?(\d+(?:\.\d+)+)-bin\.zip/i`
-          regex ||= /href=["']?#{Regexp.escape(match[:prefix])}v?(\d+(?:\.\d+)+)#{Regexp.escape(suffix)}/i
-
-          PageMatch.find_versions(page_url, regex, &block)
+          T.unsafe(PageMatch).find_versions(url: generated[:url], regex: regex || generated[:regex], **unused, &block)
         end
       end
     end

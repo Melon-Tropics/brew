@@ -64,30 +64,30 @@ module Cask
     ].freeze
 
     DSL_METHODS = Set.new([
-                            :appcast,
-                            :artifacts,
-                            :auto_updates,
-                            :caveats,
-                            :conflicts_with,
-                            :container,
-                            :desc,
-                            :depends_on,
-                            :homepage,
-                            :language,
-                            :languages,
-                            :name,
-                            :sha256,
-                            :staged_path,
-                            :url,
-                            :version,
-                            :appdir,
-                            :discontinued?,
-                            :livecheck,
-                            :livecheckable?,
-                            *ORDINARY_ARTIFACT_CLASSES.map(&:dsl_key),
-                            *ACTIVATABLE_ARTIFACT_CLASSES.map(&:dsl_key),
-                            *ARTIFACT_BLOCK_CLASSES.flat_map { |klass| [klass.dsl_key, klass.uninstall_dsl_key] },
-                          ]).freeze
+      :appcast,
+      :artifacts,
+      :auto_updates,
+      :caveats,
+      :conflicts_with,
+      :container,
+      :desc,
+      :depends_on,
+      :homepage,
+      :language,
+      :languages,
+      :name,
+      :sha256,
+      :staged_path,
+      :url,
+      :version,
+      :appdir,
+      :discontinued?,
+      :livecheck,
+      :livecheckable?,
+      *ORDINARY_ARTIFACT_CLASSES.map(&:dsl_key),
+      *ACTIVATABLE_ARTIFACT_CLASSES.map(&:dsl_key),
+      *ARTIFACT_BLOCK_CLASSES.flat_map { |klass| [klass.dsl_key, klass.uninstall_dsl_key] },
+    ]).freeze
 
     attr_reader :cask, :token
 
@@ -96,6 +96,7 @@ module Cask
       @token = cask.token
     end
 
+    # @api public
     def name(*args)
       @name ||= []
       return @name if args.empty?
@@ -103,6 +104,7 @@ module Cask
       @name.concat(args.flatten)
     end
 
+    # @api public
     def desc(description = nil)
       set_unique_stanza(:desc, description.nil?) { description }
     end
@@ -121,6 +123,7 @@ module Cask
       raise CaskInvalidError.new(cask, "'#{stanza}' stanza failed with: #{e}")
     end
 
+    # @api public
     def homepage(homepage = nil)
       set_unique_stanza(:homepage, homepage.nil?) { homepage }
     end
@@ -176,28 +179,32 @@ module Cask
       @language_blocks.keys.flatten
     end
 
-    def url(*args, **options)
+    # @api public
+    def url(*args, **options, &block)
       caller_location = caller_locations[0]
 
-      set_unique_stanza(:url, args.empty? && options.empty? && !block_given?) do
-        if block_given?
-          LazyObject.new { URL.new(*yield, from_block: true, caller_location: caller_location) }
+      set_unique_stanza(:url, args.empty? && options.empty? && !block) do
+        if block
+          URL.new(*args, **options, caller_location: caller_location, dsl: self, &block)
         else
           URL.new(*args, **options, caller_location: caller_location)
         end
       end
     end
 
+    # @api public
     def appcast(*args)
       set_unique_stanza(:appcast, args.empty?) { DSL::Appcast.new(*args) }
     end
 
+    # @api public
     def container(*args)
       set_unique_stanza(:container, args.empty?) do
         DSL::Container.new(*args)
       end
     end
 
+    # @api public
     def version(arg = nil)
       set_unique_stanza(:version, arg.nil?) do
         if !arg.is_a?(String) && arg != :latest
@@ -208,6 +215,7 @@ module Cask
       end
     end
 
+    # @api public
     def sha256(arg = nil)
       set_unique_stanza(:sha256, arg.nil?) do
         case arg
@@ -222,6 +230,7 @@ module Cask
     end
 
     # `depends_on` uses a load method so that multiple stanzas can be merged.
+    # @api public
     def depends_on(*args)
       @depends_on ||= DSL::DependsOn.new
       return @depends_on if args.empty?
@@ -234,6 +243,7 @@ module Cask
       @depends_on
     end
 
+    # @api public
     def conflicts_with(*args)
       # TODO: remove this constraint, and instead merge multiple conflicts_with stanzas
       set_unique_stanza(:conflicts_with, args.empty?) { DSL::ConflictsWith.new(*args) }
@@ -247,6 +257,7 @@ module Cask
       cask.caskroom_path
     end
 
+    # @api public
     def staged_path
       return @staged_path if @staged_path
 
@@ -254,6 +265,7 @@ module Cask
       @staged_path = caskroom_path.join(cask_version.to_s)
     end
 
+    # @api public
     def caveats(*strings, &block)
       @caveats ||= DSL::Caveats.new(cask)
       if block
@@ -272,10 +284,12 @@ module Cask
       @caveats&.discontinued?
     end
 
+    # @api public
     def auto_updates(auto_updates = nil)
       set_unique_stanza(:auto_updates, auto_updates.nil?) { auto_updates }
     end
 
+    # @api public
     def livecheck(&block)
       @livecheck ||= Livecheck.new(self)
       return @livecheck unless block
@@ -313,8 +327,6 @@ module Cask
       end
     end
 
-    # No need to define it as it's the default/superclass implementation.
-    # rubocop:disable Style/MissingRespondToMissing
     def method_missing(method, *)
       if method
         Utils.method_missing_message(method, token)
@@ -323,8 +335,12 @@ module Cask
         super
       end
     end
-    # rubocop:enable Style/MissingRespondToMissing
 
+    def respond_to_missing?(*)
+      true
+    end
+
+    # @api public
     def appdir
       cask.config.appdir
     end

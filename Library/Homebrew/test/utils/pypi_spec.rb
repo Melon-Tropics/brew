@@ -6,11 +6,11 @@ require "utils/pypi"
 describe PyPI do
   let(:package_url) do
     "https://files.pythonhosted.org/packages/b0/3f/2e1dad67eb172b6443b5eb37eb885a054a55cfd733393071499514140282/"\
-    "snakemake-5.29.0.tar.gz"
+      "snakemake-5.29.0.tar.gz"
   end
   let(:old_package_url) do
     "https://files.pythonhosted.org/packages/6f/c4/da52bfdd6168ea46a0fe2b7c983b6c34c377a8733ec177cc00b197a96a9f/"\
-    "snakemake-5.28.0.tar.gz"
+      "snakemake-5.28.0.tar.gz"
   end
 
   describe PyPI::Package do
@@ -93,7 +93,7 @@ describe PyPI do
         expect(package_with_version.pypi_info).to eq ["snakemake", old_package_url, old_package_checksum, "5.28.0"]
       end
 
-      it "gets pypi info from a package name with overriden version" do
+      it "gets pypi info from a package name with overridden version" do
         expected_result = ["snakemake", package_url, package_checksum, "5.29.0"]
         expect(package_with_version.pypi_info(version: "5.29.0")).to eq expected_result
       end
@@ -107,7 +107,7 @@ describe PyPI do
         expect(package_from_url.pypi_info).to eq ["snakemake", package_url, package_checksum, "5.29.0"]
       end
 
-      it "gets pypi info from a url with overriden version" do
+      it "gets pypi info from a url with overridden version" do
         expected_result = ["snakemake", old_package_url, old_package_checksum, "5.28.0"]
         expect(package_from_url.pypi_info(version: "5.28.0")).to eq expected_result
       end

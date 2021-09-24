@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 module Homebrew
@@ -32,6 +32,8 @@ module Homebrew
       #
       # @api public
       class GithubLatest
+        extend T::Sig
+
         NICE_NAME = "GitHub - Latest"
 
         # A priority of zero causes livecheck to skip the strategy. We do this
@@ -46,12 +48,37 @@ module Homebrew
           /(?<repository>[^/]+)              # The GitHub repository name
         }ix.freeze
 
+        # The default regex used to identify a version from a tag when a regex
+        # isn't provided.
+        DEFAULT_REGEX = %r{href=.*?/tag/v?(\d+(?:\.\d+)+)["' >]}i.freeze
+
         # Whether the strategy can be applied to the provided URL.
         #
         # @param url [String] the URL to match against
         # @return [Boolean]
+        sig { params(url: String).returns(T::Boolean) }
         def self.match?(url)
           URL_MATCH_REGEX.match?(url)
+        end
+
+        # Extracts information from a provided URL and uses it to generate
+        # various input values used by the strategy to check for new versions.
+        # Some of these values act as defaults and can be overridden in a
+        # `livecheck` block.
+        #
+        # @param url [String] the URL used to generate values
+        # @return [Hash]
+        sig { params(url: String).returns(T::Hash[Symbol, T.untyped]) }
+        def self.generate_input_values(url)
+          values = {}
+
+          match = url.sub(/\.git$/i, "").match(URL_MATCH_REGEX)
+          return values if match.blank?
+
+          # Example URL: `https://github.com/example/example/releases/latest`
+          values[:url] = "https://github.com/#{match[:username]}/#{match[:repository]}/releases/latest"
+
+          values
         end
 
         # Generates a URL and regex (if one isn't provided) and passes them
@@ -60,16 +87,20 @@ module Homebrew
         # @param url [String] the URL of the content to check
         # @param regex [Regexp] a regex used for matching versions in content
         # @return [Hash]
-        def self.find_versions(url, regex = nil, &block)
-          match = url.sub(/\.git$/i, "").match(URL_MATCH_REGEX)
+        sig {
+          params(
+            url:    String,
+            regex:  T.nilable(Regexp),
+            unused: T.nilable(T::Hash[Symbol, T.untyped]),
+            block:  T.nilable(
+              T.proc.params(arg0: String, arg1: Regexp).returns(T.any(String, T::Array[String], NilClass)),
+            ),
+          ).returns(T::Hash[Symbol, T.untyped])
+        }
+        def self.find_versions(url:, regex: nil, **unused, &block)
+          generated = generate_input_values(url)
 
-          # Example URL: `https://github.com/example/example/releases/latest`
-          page_url = "https://github.com/#{match[:username]}/#{match[:repository]}/releases/latest"
-
-          # The default regex is the same for all URLs using this strategy
-          regex ||= %r{href=.*?/tag/v?(\d+(?:\.\d+)+)["' >]}i
-
-          PageMatch.find_versions(page_url, regex, &block)
+          T.unsafe(PageMatch).find_versions(url: generated[:url], regex: regex || DEFAULT_REGEX, **unused, &block)
         end
       end
     end

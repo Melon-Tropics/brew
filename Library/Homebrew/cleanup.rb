@@ -3,7 +3,6 @@
 
 require "utils/bottles"
 
-require "utils/gems"
 require "formula"
 require "cask/cask_loader"
 require "set"
@@ -65,7 +64,7 @@ module Homebrew
         def stale_formula?(scrub)
           return false unless HOMEBREW_CELLAR.directory?
 
-          version = if to_s.match?(Pathname::BOTTLE_EXTNAME_RX)
+          version = if HOMEBREW_BOTTLES_EXTNAME_REGEX.match?(to_s)
             begin
               Utils::Bottles.resolve_version(self)
             rescue
@@ -80,7 +79,7 @@ module Homebrew
 
           version = Version.new(version)
 
-          return false unless formula_name = basename.to_s[/\A(.*?)(?:--.*?)*--?(?:#{Regexp.escape(version)})/, 1]
+          return false unless (formula_name = basename.to_s[/\A(.*?)(?:--.*?)*--?(?:#{Regexp.escape(version)})/, 1])
 
           formula = begin
             Formulary.from_rack(HOMEBREW_CELLAR/formula_name)
@@ -95,7 +94,7 @@ module Homebrew
           if resource_name == "patch"
             patch_hashes = formula.stable&.patches&.select(&:external?)&.map(&:resource)&.map(&:version)
             return true unless patch_hashes&.include?(Checksum.new(version.to_s))
-          elsif resource_name && resource_version = formula.stable&.resources&.dig(resource_name)&.version
+          elsif resource_name && (resource_version = formula.stable&.resources&.dig(resource_name)&.version)
             return true if resource_version != version
           elsif version.is_a?(PkgVersion)
             return true if formula.pkg_version > version
@@ -111,7 +110,7 @@ module Homebrew
         end
 
         def stale_cask?(scrub)
-          return false unless name = basename.to_s[/\A(.*?)--/, 1]
+          return false unless (name = basename.to_s[/\A(.*?)--/, 1])
 
           cask = begin
             Cask::CaskLoader.load(name)
@@ -155,15 +154,22 @@ module Homebrew
       @cleaned_up_paths = Set.new
     end
 
-    def self.install_formula_clean!(f)
+    def self.install_formula_clean!(f, dry_run: false)
       return if Homebrew::EnvConfig.no_install_cleanup?
 
-      cleanup = Cleanup.new
+      cleanup = Cleanup.new(dry_run: dry_run)
       if cleanup.periodic_clean_due?
         cleanup.periodic_clean!
-      elsif f.latest_version_installed?
+      elsif f.latest_version_installed? && !cleanup.skip_clean_formula?(f)
         cleanup.cleanup_formula(f)
       end
+    end
+
+    def skip_clean_formula?(f)
+      return false if Homebrew::EnvConfig.no_cleanup_formulae.blank?
+
+      skip_clean_formulae = Homebrew::EnvConfig.no_cleanup_formulae.split(",")
+      skip_clean_formulae.include?(f.name) || (skip_clean_formulae & f.aliases).present?
     end
 
     def periodic_clean_due?
@@ -181,13 +187,20 @@ module Homebrew
     def periodic_clean!
       return false unless periodic_clean_due?
 
-      ohai "`brew cleanup` has not been run in #{CLEANUP_DEFAULT_DAYS} days, running now..."
-      clean!(quiet: true, periodic: true)
+      if dry_run?
+        ohai "Would run `brew cleanup` which has not been run in the last #{CLEANUP_DEFAULT_DAYS} days"
+      else
+        ohai "`brew cleanup` has not been run in the last #{CLEANUP_DEFAULT_DAYS} days, running now..."
+        clean!(quiet: true, periodic: true)
+      end
     end
 
     def clean!(quiet: false, periodic: false)
       if args.empty?
-        Formula.installed.sort_by(&:name).each do |formula|
+        Formula.installed
+               .sort_by(&:name)
+               .reject { |f| skip_clean_formula?(f) }
+               .each do |formula|
           cleanup_formula(formula, quiet: quiet, ds_store: false, cache_db: false)
         end
         cleanup_cache
@@ -224,7 +237,12 @@ module Homebrew
             nil
           end
 
-          cleanup_formula(formula) if formula
+          if formula && skip_clean_formula?(formula)
+            onoe "Refusing to clean #{formula} because it is listed in " \
+                 "#{Tty.bold}HOMEBREW_NO_CLEANUP_FORMULAE#{Tty.reset}!"
+          elsif formula
+            cleanup_formula(formula)
+          end
           cleanup_cask(cask) if cask
         end
       end
@@ -318,7 +336,7 @@ module Homebrew
           next
         end
 
-        # If we've specifed --prune don't do the (expensive) .stale? check.
+        # If we've specified --prune don't do the (expensive) .stale? check.
         cleanup_path(path) { path.unlink } if !prune? && path.stale?(scrub: scrub?)
       end
 
@@ -431,14 +449,17 @@ module Homebrew
     end
 
     def rm_ds_store(dirs = nil)
-      dirs ||= begin
-        Keg::MUST_EXIST_DIRECTORIES + [
-          HOMEBREW_PREFIX/"Caskroom",
-        ]
-      end
+      dirs ||= Keg::MUST_EXIST_DIRECTORIES + [
+        HOMEBREW_PREFIX/"Caskroom",
+      ]
       dirs.select(&:directory?)
           .flat_map { |d| Pathname.glob("#{d}/**/.DS_Store") }
-          .each(&:unlink)
+          .each do |dir|
+            dir.unlink
+          rescue Errno::EACCES
+            # don't care if we can't delete a .DS_Store
+            nil
+          end
     end
 
     def prune_prefix_symlinks_and_directories

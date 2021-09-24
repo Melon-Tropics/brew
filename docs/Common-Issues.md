@@ -17,14 +17,14 @@ After running `brew update`, you receive a Git error warning about untracked fil
 This is caused by an old bug in in the `update` code that has long since been fixed. However, the nature of the bug requires that you do the following:
 
 ```sh
-cd $(brew --repository)
+cd "$(brew --repository)"
 git reset --hard FETCH_HEAD
 ```
 
 If `brew doctor` still complains about uncommitted modifications, also run this command:
 
 ```sh
-cd $(brew --repository)/Library
+cd "$(brew --repository)/Library"
 git clean -fd
 ```
 
@@ -71,7 +71,7 @@ Please report this bug:
 This happens because an old version of the upgrade command is hanging around for some reason. The fix:
 
 ```sh
-cd $(brew --repository)/Library/Contributions/examples
+cd "$(brew --repository)/Library/Contributions/examples"
 git clean -n # if this doesn't list anything that you want to keep, then
 git clean -f # this will remove untracked files
 ```
@@ -113,3 +113,7 @@ Following a macOS upgrade it may be necessary to reinstall the Xcode Command Lin
 xcode-select --install
 brew upgrade
 ```
+
+### Other local issues
+
+If your Homebrew installation gets messed up (and fixing the issues found by `brew doctor` doesn't solve the problem), reinstalling Homebrew may help to reset to a normal state. To easily reinstall Homebrew, use [Homebrew Bundle](https://github.com/Homebrew/homebrew-bundle) to automatically restore your installed formulae and casks. To do so, run `brew bundle dump`, [uninstall](https://docs.brew.sh/FAQ#how-do-i-uninstall-homebrew), [reinstall](https://docs.brew.sh/Installation) and run `brew bundle install`.

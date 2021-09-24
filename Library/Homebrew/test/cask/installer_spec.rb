@@ -16,7 +16,7 @@ describe Cask::Installer, :cask do
       expect(caffeine.config.appdir.join("Caffeine.app")).to be_a_directory
     end
 
-    it "works with dmg-based Casks" do
+    it "works with HFS+ dmg-based Casks" do
       asset = Cask::CaskLoader.load(cask_path("container-dmg"))
 
       described_class.new(asset).install

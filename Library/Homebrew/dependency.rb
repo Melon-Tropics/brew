@@ -11,6 +11,7 @@ class Dependency
 
   extend Forwardable
   include Dependable
+  extend Cachable
 
   attr_reader :name, :tags, :env_proc, :option_names
 
@@ -43,6 +44,15 @@ class Dependency
     formula = Formulary.factory(name)
     formula.build = BuildOptions.new(options, formula.options)
     formula
+  end
+
+  def unavailable_core_formula?
+    to_formula
+    false
+  rescue CoreTapFormulaUnavailableError
+    true
+  rescue
+    false
   end
 
   def installed?
@@ -87,41 +97,50 @@ class Dependency
     # `[dependent, dep]` pairs to allow callers to apply arbitrary filters to
     # the list.
     # The default filter, which is applied when a block is not given, omits
-    # optionals and recommendeds based on what the dependent has asked for.
-    def expand(dependent, deps = dependent.deps, &block)
+    # optionals and recommendeds based on what the dependent has asked for
+    def expand(dependent, deps = dependent.deps, cache_key: nil, ignore_missing: false, &block)
       # Keep track dependencies to avoid infinite cyclic dependency recursion.
       @expand_stack ||= []
       @expand_stack.push dependent.name
+
+      if cache_key.present?
+        cache[cache_key] ||= {}
+        return cache[cache_key][cache_id dependent].dup if cache[cache_key][cache_id dependent]
+      end
 
       expanded_deps = []
 
       deps.each do |dep|
         next if dependent.name == dep.name
 
-        case action(dependent, dep, &block)
+        case action(dependent, dep, ignore_missing: ignore_missing, &block)
         when :prune
           next
         when :skip
           next if @expand_stack.include? dep.name
 
-          expanded_deps.concat(expand(dep.to_formula, &block))
+          expanded_deps.concat(expand(dep.to_formula, cache_key: cache_key, ignore_missing: ignore_missing, &block))
         when :keep_but_prune_recursive_deps
           expanded_deps << dep
         else
           next if @expand_stack.include? dep.name
 
-          expanded_deps.concat(expand(dep.to_formula, &block))
+          expanded_deps.concat(expand(dep.to_formula, cache_key: cache_key, ignore_missing: ignore_missing, &block))
           expanded_deps << dep
         end
       end
 
-      merge_repeats(expanded_deps)
+      expanded_deps = merge_repeats(expanded_deps)
+      cache[cache_key][cache_id dependent] = expanded_deps.dup if cache_key.present?
+      expanded_deps
     ensure
       @expand_stack.pop
     end
 
-    def action(dependent, dep, &block)
+    def action(dependent, dep, ignore_missing: false, &block)
       catch(:action) do
+        prune if ignore_missing && dep.unavailable_core_formula?
+
         if block
           yield dependent, dep
         elsif dep.optional? || dep.recommended?
@@ -161,6 +180,10 @@ class Dependency
     end
 
     private
+
+    def cache_id(dependent)
+      "#{dependent.full_name}_#{dependent.class}"
+    end
 
     def merge_tags(deps)
       other_tags = deps.flat_map(&:option_tags).uniq

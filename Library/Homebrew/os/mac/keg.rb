@@ -34,6 +34,33 @@ class Keg
     raise
   end
 
+  def change_rpath(old, new, file)
+    return if old == new
+
+    @require_relocation = true
+    odebug "Changing rpath in #{file}\n  from #{old}\n    to #{new}"
+    MachO::Tools.change_rpath(file, old, new, strict: false)
+    apply_ad_hoc_signature(file)
+  rescue MachO::MachOError
+    onoe <<~EOS
+      Failed changing rpath in #{file}
+        from #{old}
+          to #{new}
+    EOS
+    raise
+  end
+
+  def delete_rpath(rpath, file)
+    odebug "Deleting rpath #{rpath} in #{file}"
+    MachO::Tools.delete_rpath(file, rpath, strict: false)
+    apply_ad_hoc_signature(file)
+  rescue MachO::MachOError
+    onoe <<~EOS
+      Failed deleting rpath #{rpath} in #{file}
+    EOS
+    raise
+  end
+
   def apply_ad_hoc_signature(file)
     return if MacOS.version < :big_sur
     return unless Hardware::CPU.arm?
@@ -57,13 +84,17 @@ class Keg
 
     # Try signing again
     odebug "Codesigning (2nd try) #{file}"
-    return if quiet_system("codesign", "--sign", "-", "--force",
-                           "--preserve-metadata=entitlements,requirements,flags,runtime",
-                           file)
+    result = system_command("codesign", args: [
+      "--sign", "-", "--force",
+      "--preserve-metadata=entitlements,requirements,flags,runtime",
+      file
+    ], print_stderr: false)
+    return if result.success?
 
     # If it fails again, error out
     onoe <<~EOS
-      Failed applying an ad-hoc signature to #{file}
+      Failed applying an ad-hoc signature to #{file}:
+      #{result.stderr}
     EOS
   end
 end

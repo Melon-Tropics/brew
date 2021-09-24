@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 require "lock_file"
@@ -110,10 +110,14 @@ class Migrator
     true
   end
 
-  def self.migrate_if_needed(formula, force:)
+  def self.migrate_if_needed(formula, force:, dry_run: false)
     return unless Migrator.needs_migration?(formula)
 
     begin
+      if dry_run
+        ohai "Would migrate #{formula.oldname} to #{formula.name}"
+        return
+      end
       migrator = Migrator.new(formula, force: force)
       migrator.migrate
     rescue => e
@@ -138,7 +142,7 @@ class Migrator
     @new_cellar = HOMEBREW_CELLAR/formula.name
     @new_cellar_existed = @new_cellar.exist?
 
-    if @old_linked_keg = linked_old_linked_keg
+    if (@old_linked_keg = linked_old_linked_keg)
       @old_linked_keg_record = old_linked_keg.linked_keg_record if old_linked_keg.linked?
       @old_opt_record = old_linked_keg.opt_record if old_linked_keg.optlinked?
       @new_linked_keg_record = HOMEBREW_CELLAR/"#{newname}/#{File.basename(old_linked_keg)}"
@@ -165,7 +169,7 @@ class Migrator
 
     new_tap = if old_tap
       old_tap_user, = old_tap.user
-      if migrate_tap = old_tap.tap_migrations[formula.oldname]
+      if (migrate_tap = old_tap.tap_migrations[formula.oldname])
         new_tap_user, new_tap_repo = migrate_tap.split("/")
         "#{new_tap_user}/#{new_tap_repo}"
       end

@@ -24,8 +24,15 @@ module Homebrew
       flag   "--workflow=",
              description: "Dispatch specified workflow (default: `dispatch-build-bottle.yml`)."
       switch "--upload",
-             description: "Upload built bottles to Bintray."
+             description: "Upload built bottles."
+      switch "--linux",
+             description: "Dispatch bottle for Linux (using GitHub runners)."
+      switch "--linux-self-hosted",
+             description: "Dispatch bottle for Linux (using self-hosted runner)."
+      switch "--linux-wheezy",
+             description: "Use Debian Wheezy container for building the bottle on Linux."
 
+      conflicts "--macos", "--linux", "--linux-self-hosted"
       named_args :formula, min: 1
     end
   end
@@ -33,45 +40,52 @@ module Homebrew
   def dispatch_build_bottle
     args = dispatch_build_bottle_args.parse
 
-    # Fixup version for ARM/Apple Silicon
-    # TODO: fix label name to be 11-arm64 instead and remove this.
-    args.macos&.gsub!(/^11-arm$/, "11-arm64")
-
-    macos = args.macos&.yield_self do |s|
-      MacOS::Version.from_symbol(s.to_sym)
-    rescue MacOSVersionError
-      MacOS::Version.new(s)
-    end
-
-    raise UsageError, "Must specify --macos option" if macos.blank?
-
-    # Fixup label for ARM/Apple Silicon
-    macos_label = if macos.arch == :arm64
-      # TODO: fix label name to be 11-arm64 instead.
-      "#{macos}-arm"
-    else
-      macos.to_s
-    end
-
     tap = Tap.fetch(args.tap || CoreTap.instance.name)
     user, repo = tap.full_name.split("/")
-
-    workflow = args.workflow || "dispatch-build-bottle.yml"
     ref = "master"
+    workflow = args.workflow || "dispatch-build-bottle.yml"
+
+    # Ensure we dispatch the bottle in homebrew/homebrew-core
+    # TODO: remove when core taps are merged
+    repo.gsub!("linux", "home") unless args.tap
+
+    runner = if (macos = args.macos)
+      # We accept runner name syntax (11-arm64) or bottle syntax (arm64_big_sur)
+      os, arch = macos.yield_self do |s|
+        tag = Utils::Bottles::Tag.from_symbol(s.to_sym)
+        [tag.to_macos_version, tag.arch]
+      rescue ArgumentError, MacOSVersionError
+        os, arch = s.split("-", 2)
+        [MacOS::Version.new(os), arch&.to_sym]
+      end
+
+      if arch.present? && arch != :x86_64
+        "#{os}-#{arch}"
+      else
+        os.to_s
+      end
+    elsif args.linux?
+      "ubuntu-latest"
+    elsif args.linux_self_hosted?
+      "linux-self-hosted-1"
+    else
+      raise UsageError, "Must specify --macos or --linux or --linux-self-hosted option"
+    end
 
     args.named.to_resolved_formulae.each do |formula|
       # Required inputs
       inputs = {
+        runner:  runner,
         formula: formula.name,
-        macos:   macos_label,
       }
 
       # Optional inputs
       # These cannot be passed as nil to GitHub API
       inputs[:issue] = args.issue if args.issue
       inputs[:upload] = args.upload?.to_s if args.upload?
+      inputs[:wheezy] = args.linux_wheezy?.to_s if args.linux_wheezy?
 
-      ohai "Dispatching #{tap} bottling request of formula \"#{formula.name}\" for macOS #{macos}"
+      ohai "Dispatching #{tap} bottling request of formula \"#{formula.name}\" for #{runner}"
       GitHub.workflow_dispatch_event(user, repo, workflow, ref, inputs)
     end
   end

@@ -3,146 +3,164 @@
 module Homebrew
   module CLI
     class Args < OpenStruct
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def HEAD?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def include_test?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def build_bottle?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def build_universal?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def build_from_source?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def force_bottle?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def newer_only?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def full_name?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def json?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def debug?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def quiet?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def verbose?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def fetch_HEAD?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def cask?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def dry_run?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def skip_cask_deps?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def greedy?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def force?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def ignore_pinned?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def display_times?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def formula?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def zap?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def ignore_dependencies?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def aliases?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def fix?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def keep_tmp?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def overwrite?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def silent?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def repair?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def prune_prefix?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def upload?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
+      def linux?; end
+
+      sig { returns(T::Boolean) }
+      def linux_self_hosted?; end
+
+      sig { returns(T::Boolean) }
+      def linux_wheezy?; end
+
+      sig { returns(T::Boolean) }
       def total?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def dependents?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def installed?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
+      def installed_on_request?; end
+
+      sig { returns(T::Boolean) }
+      def installed_as_dependency?; end
+
+      sig { returns(T::Boolean) }
       def all?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def full?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def list_pinned?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def display_cop_names?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def syntax?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def ignore_non_pypi_packages?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def test?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def reverse?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def print_only?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def markdown?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def reset_cache?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def major?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def minor?; end
+
+      sig { returns(T.nilable(String)) }
+      def bottle_tag; end
 
       sig { returns(T.nilable(String)) }
       def tag; end
@@ -162,13 +180,13 @@ module Homebrew
       sig { returns(T.nilable(String)) }
       def name; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def no_publish?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def shallow?; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def fail_if_not_changed?; end
 
       sig { returns(T.nilable(String)) }
@@ -183,11 +201,6 @@ module Homebrew
       sig { returns(T.nilable(String)) }
       def workflow; end
 
-      sig { returns(T.nilable(String)) }
-      def bintray_org; end
-
-      sig { returns(T.nilable(String)) }
-      def bintray_repo; end
       sig { returns(T.nilable(String)) }
       def package_name; end
 
@@ -230,7 +243,7 @@ module Homebrew
       sig { returns(T.nilable(T::Array[String])) }
       def update; end
 
-      sig { returns(T.nilable(T::Boolean)) }
+      sig { returns(T::Boolean) }
       def s?; end
 
       sig { returns(T.nilable(String)) }
@@ -274,6 +287,12 @@ module Homebrew
 
       sig { returns(T.nilable(String)) }
       def screen_saverdir; end
+
+      sig { returns(T.nilable(T::Array[String])) }
+      def groups; end
+
+      sig { returns(T::Boolean) }
+      def write_only?; end
     end
   end
 end

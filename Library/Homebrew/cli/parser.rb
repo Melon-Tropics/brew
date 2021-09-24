@@ -10,6 +10,7 @@ require "utils/tty"
 
 COMMAND_DESC_WIDTH = 80
 OPTION_DESC_WIDTH = 43
+HIDDEN_DESC_PLACEHOLDER = "@@HIDDEN@@"
 
 module Homebrew
   module CLI
@@ -136,6 +137,7 @@ module Homebrew
         @usage_banner = nil
         @hide_from_man_page = false
         @formula_options = false
+        @cask_options = false
 
         self.class.global_options.each do |short, long, desc|
           switch short, long, description: desc, env: option_to_name(long), method: :on_tail
@@ -147,23 +149,19 @@ module Homebrew
       end
 
       def switch(*names, description: nil, replacement: nil, env: nil, required_for: nil, depends_on: nil,
-                 method: :on)
+                 method: :on, hidden: false)
         global_switch = names.first.is_a?(Symbol)
         return if global_switch
 
-        description = option_to_description(*names) if description.nil?
+        description = option_description(description, *names, hidden: hidden)
         if replacement.nil?
-          process_option(*names, description, type: :switch)
+          process_option(*names, description, type: :switch, hidden: hidden)
         else
           description += " (disabled#{"; replaced by #{replacement}" if replacement.present?})"
         end
         @parser.public_send(method, *names, *wrap_option_desc(description)) do |value|
           odisabled "the `#{names.first}` switch", replacement unless replacement.nil?
-          value = if names.any? { |name| name.start_with?("--[no-]") }
-            value
-          else
-            true
-          end
+          value = true if names.none? { |name| name.start_with?("--[no-]") }
 
           set_switch(*names, value: value, from: :args)
         end
@@ -197,25 +195,26 @@ module Homebrew
         @parser.banner
       end
 
-      def comma_array(name, description: nil)
+      def comma_array(name, description: nil, hidden: false)
         name = name.chomp "="
-        description = option_to_description(name) if description.nil?
-        process_option(name, description, type: :comma_array)
+        description = option_description(description, name, hidden: hidden)
+        process_option(name, description, type: :comma_array, hidden: hidden)
         @parser.on(name, OptionParser::REQUIRED_ARGUMENT, Array, *wrap_option_desc(description)) do |list|
           @args[option_to_name(name)] = list
         end
       end
 
-      def flag(*names, description: nil, replacement: nil, required_for: nil, depends_on: nil)
+      def flag(*names, description: nil, replacement: nil, required_for: nil,
+               depends_on: nil, hidden: false)
         required, flag_type = if names.any? { |name| name.end_with? "=" }
           [OptionParser::REQUIRED_ARGUMENT, :required_flag]
         else
           [OptionParser::OPTIONAL_ARGUMENT, :optional_flag]
         end
         names.map! { |name| name.chomp "=" }
-        description = option_to_description(*names) if description.nil?
+        description = option_description(description, *names, hidden: hidden)
         if replacement.nil?
-          process_option(*names, description, type: flag_type)
+          process_option(*names, description, type: flag_type, hidden: hidden)
         else
           description += " (disabled#{"; replaced by #{replacement}" if replacement.present?})"
         end
@@ -253,11 +252,19 @@ module Homebrew
         names.map { |name| name.to_s.sub(/\A--?/, "").tr("-", " ") }.max
       end
 
+      def option_description(description, *names, hidden: false)
+        return HIDDEN_DESC_PLACEHOLDER if hidden
+        return description if description.present?
+
+        option_to_description(*names)
+      end
+
       def parse_remaining(argv, ignore_invalid_options: false)
         i = 0
         remaining = []
 
         argv, non_options = split_non_options(argv)
+        allow_commands = Array(@named_args_type).include?(:command)
 
         while i < argv.count
           begin
@@ -273,7 +280,7 @@ module Homebrew
               i += 1
             end
           rescue OptionParser::InvalidOption
-            if ignore_invalid_options
+            if ignore_invalid_options || (allow_commands && Commands.path(arg))
               remaining << arg
             else
               $stderr.puts generate_help_text
@@ -328,9 +335,10 @@ module Homebrew
           check_named_args(named_args)
         end
 
-        @args.freeze_named_args!(named_args)
+        @args.freeze_named_args!(named_args, cask_options: @cask_options)
         @args.freeze_remaining_args!(non_options.empty? ? remaining : [*remaining, "--", non_options])
         @args.freeze_processed_options!(@processed_options)
+        @args.freeze
 
         @args_parsed = true
 
@@ -344,6 +352,7 @@ module Homebrew
 
       def generate_help_text
         Formatter.wrap(@parser.to_s, COMMAND_DESC_WIDTH)
+                 .gsub(/\n.*?@@HIDDEN@@.*?(?=\n)/, "")
                  .sub(/^/, "#{Tty.bold}Usage: brew#{Tty.reset} ")
                  .gsub(/`(.*?)`/m, "#{Tty.bold}\\1#{Tty.reset}")
                  .gsub(%r{<([^\s]+?://[^\s]+?)>}) { |url| Formatter.url(url) }
@@ -357,6 +366,7 @@ module Homebrew
           send(method, *args, **options)
           conflicts "--formula", args.last
         end
+        @cask_options = true
       end
 
       sig { void }
@@ -390,44 +400,6 @@ module Homebrew
         elsif min.present? || max.present?
           @min_named_args = min
           @max_named_args = max
-        end
-      end
-
-      def max_named(count)
-        odeprecated "`max_named`", "`named_args max:`"
-
-        raise TypeError, "Unsupported type #{count.class.name} for max_named" unless count.is_a?(Integer)
-
-        @max_named_args = count
-      end
-
-      def min_named(count_or_type)
-        odeprecated "`min_named`", "`named_args min:`"
-
-        case count_or_type
-        when Integer
-          @min_named_args = count_or_type
-          @named_args_type = nil
-        when Symbol
-          @min_named_args = 1
-          @named_args_type = count_or_type
-        else
-          raise TypeError, "Unsupported type #{count_or_type.class.name} for min_named"
-        end
-      end
-
-      def named(count_or_type)
-        odeprecated "`named`", "`named_args`"
-
-        case count_or_type
-        when Integer
-          @max_named_args = @min_named_args = count_or_type
-          @named_args_type = nil
-        when Symbol
-          @max_named_args = @min_named_args = 1
-          @named_args_type = count_or_type
-        else
-          raise TypeError, "Unsupported type #{count_or_type.class.name} for named"
         end
       end
 
@@ -474,7 +446,7 @@ module Homebrew
 
               "<#{type}>"
             end.compact
-            types << "<subcommand>" if @named_args_type.any? { |type| type.is_a? String }
+            types << "<subcommand>" if @named_args_type.any?(String)
             types.join("|")
           elsif SYMBOL_TO_USAGE_MAPPING.key? @named_args_type
             SYMBOL_TO_USAGE_MAPPING[@named_args_type]
@@ -518,7 +490,11 @@ module Homebrew
 
       def disable_switch(*names)
         names.each do |name|
-          @args.delete_field("#{option_to_name(name)}?")
+          @args["#{option_to_name(name)}?"] = if name.start_with?("--[no-]")
+            nil
+          else
+            false
+          end
         end
       end
 
@@ -612,18 +588,27 @@ module Homebrew
         raise exception if exception
       end
 
-      def process_option(*args, type:)
+      def process_option(*args, type:, hidden: false)
         option, = @parser.make_switch(args)
         @processed_options.reject! { |existing| existing.second == option.long.first } if option.long.first.present?
-        @processed_options << [option.short.first, option.long.first, option.arg, option.desc.first]
+        @processed_options << [option.short.first, option.long.first, option.arg, option.desc.first, hidden]
 
+        if type == :switch
+          disable_switch(*args)
+        else
+          args.each do |name|
+            @args[option_to_name(name)] = nil
+          end
+        end
+
+        return if hidden
         return if self.class.global_options.include? [option.short.first, option.long.first, option.desc.first]
 
         @non_global_processed_options << [option.long.first || option.short.first, type]
       end
 
       def split_non_options(argv)
-        if sep = argv.index("--")
+        if (sep = argv.index("--"))
           [argv.take(sep), argv.drop(sep + 1)]
         else
           [argv, []]

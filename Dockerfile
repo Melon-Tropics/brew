@@ -1,5 +1,6 @@
 ARG version=20.04
-FROM ubuntu:$version
+# shellcheck disable=SC2154
+FROM ubuntu:"${version}"
 ARG DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
@@ -14,6 +15,7 @@ RUN apt-get update \
     file \
     fonts-dejavu-core \
     g++ \
+    gawk \
     git \
     less \
     libz-dev \
@@ -28,23 +30,30 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && localedef -i en_US -f UTF-8 en_US.UTF-8 \
   && useradd -m -s /bin/bash linuxbrew \
-  && echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >>/etc/sudoers
+  && echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >>/etc/sudoers \
+  && su - linuxbrew -c 'mkdir ~/.linuxbrew'
 
-COPY . /home/linuxbrew/.linuxbrew/Homebrew
-ENV PATH=/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH
+USER linuxbrew
+COPY --chown=linuxbrew:linuxbrew . /home/linuxbrew/.linuxbrew/Homebrew
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
 WORKDIR /home/linuxbrew
 
-# hadolint ignore=DL3003
-RUN cd /home/linuxbrew/.linuxbrew \
-  && mkdir -p bin etc include lib opt sbin share var/homebrew/linked Cellar \
-  && ln -s ../Homebrew/bin/brew /home/linuxbrew/.linuxbrew/bin/ \
-  && git -C /home/linuxbrew/.linuxbrew/Homebrew remote set-url origin https://github.com/Homebrew/brew \
-  && git -C /home/linuxbrew/.linuxbrew/Homebrew fetch origin \
+RUN mkdir -p \
+     .linuxbrew/bin \
+     .linuxbrew/etc \
+     .linuxbrew/include \
+     .linuxbrew/lib \
+     .linuxbrew/opt \
+     .linuxbrew/sbin \
+     .linuxbrew/share \
+     .linuxbrew/var/homebrew/linked \
+     .linuxbrew/Cellar \
+  && ln -s ../Homebrew/bin/brew .linuxbrew/bin/brew \
+  && git -C .linuxbrew/Homebrew remote set-url origin https://github.com/Homebrew/brew \
+  && git -C .linuxbrew/Homebrew fetch origin \
   && HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1 brew tap homebrew/core \
   && brew install-bundler-gems \
   && brew cleanup \
-  && { git -C /home/linuxbrew/.linuxbrew/Homebrew config --unset gc.auto; true; } \
-  && { git -C /home/linuxbrew/.linuxbrew/Homebrew config --unset homebrew.devcmdrun; true; } \
-  && rm -rf ~/.cache \
-  && chown -R linuxbrew: /home/linuxbrew/.linuxbrew \
-  && chmod -R g+w,o-w /home/linuxbrew/.linuxbrew
+  && { git -C .linuxbrew/Homebrew config --unset gc.auto; true; } \
+  && { git -C .linuxbrew/Homebrew config --unset homebrew.devcmdrun; true; } \
+  && rm -rf .cache

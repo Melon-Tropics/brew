@@ -40,7 +40,7 @@ module Cask
       private
 
       def cask(header_token, **options, &block)
-        Cask.new(header_token, **options, config: @config, &block)
+        Cask.new(header_token, source: content, **options, config: @config, &block)
       end
     end
 
@@ -157,7 +157,7 @@ module Cask
       end
 
       def load(config:)
-        tap.install unless tap.installed?
+        raise TapCaskUnavailableError.new(tap, token) unless tap.installed?
 
         super
       end

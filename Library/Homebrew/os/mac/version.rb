@@ -13,10 +13,8 @@ module OS
     class Version < ::Version
       extend T::Sig
 
-      sig { returns(Symbol) }
-      attr_reader :arch
-
       SYMBOLS = {
+        monterey:    "12",
         big_sur:     "11",
         catalina:    "10.15",
         mojave:      "10.14",
@@ -26,43 +24,32 @@ module OS
         yosemite:    "10.10",
       }.freeze
 
-      sig { params(sym: Symbol).returns(T.attached_class) }
-      def self.from_symbol(sym)
-        version, arch = version_arch(sym)
-        version ||= sym
-        str = SYMBOLS.fetch(version.to_sym) { raise MacOSVersionError, sym }
-        new(str, arch: arch)
+      # TODO: bump version when new macOS is released or announced
+      # and also update references in docs/Installation.md and
+      # https://github.com/Homebrew/install/blob/HEAD/install.sh
+      MACOS_NEWEST_UNSUPPORTED = "12.0"
+      private_constant :MACOS_NEWEST_UNSUPPORTED
+
+      # TODO: bump version when new macOS is released and also update
+      # references in docs/Installation.md and
+      # https://github.com/Homebrew/install/blob/HEAD/install.sh
+      MACOS_OLDEST_SUPPORTED = "10.14"
+      private_constant :MACOS_OLDEST_SUPPORTED
+
+      sig { params(version: Symbol).returns(T.attached_class) }
+      def self.from_symbol(version)
+        str = SYMBOLS.fetch(version) { raise MacOSVersionError, version }
+        new(str)
       end
 
-      sig { params(value: T.any(String, Symbol)).returns(T.any([], [String, T.nilable(String)])) }
-      def self.version_arch(value)
-        @all_archs_regex ||= begin
-          all_archs = Hardware::CPU::ALL_ARCHS.map(&:to_s)
-          /
-            ^((?<prefix_arch>#{Regexp.union(all_archs)})_)?
-            (?<version>[\w.]+)
-            (-(?<suffix_arch>#{Regexp.union(all_archs)}))?$
-          /x
-        end
-        match = @all_archs_regex.match(value.to_s)
-        return [] unless match
-
-        version = match[:version]
-        arch = match[:prefix_arch] || match[:suffix_arch]
-        [version, arch]
-      end
-
-      sig { params(value: T.nilable(String), arch: T.nilable(String)).void }
-      def initialize(value, arch: nil)
-        version, arch = Version.version_arch(value) if value.present? && arch.nil?
+      sig { params(value: T.nilable(String)).void }
+      def initialize(value)
         version ||= value
-        arch    ||= "intel"
 
         raise MacOSVersionError, version unless /\A1\d+(?:\.\d+){0,2}\Z/.match?(version)
 
         super(version)
 
-        @arch = arch.to_sym
         @comparison_cache = {}
       end
 
@@ -78,22 +65,34 @@ module OS
         end
       end
 
+      sig { returns(T.self_type) }
+      def strip_patch
+        # Big Sur is 11.x but Catalina is 10.15.x.
+        if major >= 11
+          self.class.new(major.to_s)
+        else
+          major_minor
+        end
+      end
+
       sig { returns(Symbol) }
       def to_sym
-        @to_sym ||= begin
-          # Big Sur is 11.x but Catalina is 10.15.
-          major_macos = if major >= 11
-            major
-          else
-            major_minor
-          end.to_s
-          SYMBOLS.invert.fetch(major_macos, :dunno)
-        end
+        @to_sym ||= SYMBOLS.invert.fetch(strip_patch.to_s, :dunno)
       end
 
       sig { returns(String) }
       def pretty_name
         @pretty_name ||= to_sym.to_s.split("_").map(&:capitalize).join(" ").freeze
+      end
+
+      sig { returns(T::Boolean) }
+      def outdated_release?
+        self < MACOS_OLDEST_SUPPORTED
+      end
+
+      sig { returns(T::Boolean) }
+      def prerelease?
+        self >= MACOS_NEWEST_UNSUPPORTED
       end
 
       # For {OS::Mac::Version} compatibility.

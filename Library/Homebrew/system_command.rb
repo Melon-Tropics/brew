@@ -10,13 +10,15 @@ require "extend/io"
 require "extend/predicable"
 require "extend/hash_validator"
 
+require "extend/time"
+
 # Class for running sub-processes and capturing their output and exit status.
 #
 # @api private
 class SystemCommand
   extend T::Sig
 
-  using HashValidator
+  using TimeRemaining
 
   # Helper functions for calling {SystemCommand.run}.
   module Mixin
@@ -78,10 +80,24 @@ class SystemCommand
       verbose:      T.nilable(T::Boolean),
       secrets:      T.any(String, T::Array[String]),
       chdir:        T.any(String, Pathname),
+      timeout:      T.nilable(T.any(Integer, Float)),
     ).void
   }
-  def initialize(executable, args: [], sudo: false, env: {}, input: [], must_succeed: false,
-                 print_stdout: false, print_stderr: true, debug: nil, verbose: nil, secrets: [], chdir: T.unsafe(nil))
+  def initialize(
+    executable,
+    args: [],
+    sudo: false,
+    env: {},
+    input: [],
+    must_succeed: false,
+    print_stdout: false,
+    print_stderr: true,
+    debug: nil,
+    verbose: false,
+    secrets: [],
+    chdir: T.unsafe(nil),
+    timeout: nil
+  )
     require "extend/ENV"
     @executable = executable
     @args = args
@@ -100,6 +116,7 @@ class SystemCommand
     @verbose = verbose
     @secrets = (Array(secrets) + ENV.sensitive_environment.values).uniq
     @chdir = chdir
+    @timeout = timeout
   end
 
   sig { returns(T::Array[String]) }
@@ -161,6 +178,9 @@ class SystemCommand
     end
   end
 
+  class ProcessTerminatedInterrupt < StandardError; end
+  private_constant :ProcessTerminatedInterrupt
+
   sig { params(block: T.proc.params(type: Symbol, line: String).void).void }
   def each_output_line(&block)
     executable, *args = command
@@ -179,9 +199,28 @@ class SystemCommand
 
     write_input_to(raw_stdin)
     raw_stdin.close_write
-    each_line_from [raw_stdout, raw_stderr], &block
+
+    thread_ready_queue = Queue.new
+    thread_done_queue = Queue.new
+    line_thread = Thread.new do
+      Thread.handle_interrupt(ProcessTerminatedInterrupt => :never) do
+        thread_ready_queue << true
+        each_line_from [raw_stdout, raw_stderr], &block
+      end
+      thread_done_queue.pop
+    rescue ProcessTerminatedInterrupt
+      nil
+    end
+
+    end_time = Time.now + @timeout if @timeout
+    raise Timeout::Error if raw_wait_thr.join(end_time&.remaining).nil?
 
     @status = raw_wait_thr.value
+
+    thread_ready_queue.pop
+    line_thread.raise ProcessTerminatedInterrupt.new
+    thread_done_queue << true
+    line_thread.join
   rescue Interrupt
     Process.kill("INT", pid) if pid && !sudo?
     raise Interrupt
@@ -197,23 +236,39 @@ class SystemCommand
 
   sig { params(sources: T::Array[IO], _block: T.proc.params(type: Symbol, line: String).void).void }
   def each_line_from(sources, &_block)
-    loop do
-      readable_sources, = IO.select(sources)
+    sources = {
+      sources[0] => :stdout,
+      sources[1] => :stderr,
+    }
 
-      readable_sources = T.must(readable_sources).reject(&:eof?)
+    pending_interrupt = T.let(false, T::Boolean)
 
-      break if readable_sources.empty?
+    until pending_interrupt
+      readable_sources = T.let([], T::Array[IO])
+      begin
+        Thread.handle_interrupt(ProcessTerminatedInterrupt => :on_blocking) do
+          readable_sources = T.must(IO.select(sources.keys)).fetch(0)
+        end
+      rescue ProcessTerminatedInterrupt
+        readable_sources = sources.keys
+        pending_interrupt = true
+      end
 
-      readable_sources.each do |source|
-        line = source.readline_nonblock || ""
-        type = (source == sources[0]) ? :stdout : :stderr
-        yield(type, line)
-      rescue IO::WaitReadable, EOFError
-        next
+      break if readable_sources.none? do |source|
+        loop do
+          line = source.readline_nonblock || ""
+          yield(sources.fetch(source), line)
+        end
+      rescue EOFError
+        source.close_read
+        sources.delete(source)
+        sources.any?
+      rescue IO::WaitReadable
+        true
       end
     end
 
-    sources.each(&:close_read)
+    sources.each_key(&:close_read)
   end
 
   # Result containing the output and exit status of a finished sub-process.

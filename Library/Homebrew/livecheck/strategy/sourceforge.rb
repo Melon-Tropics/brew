@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 module Homebrew
@@ -31,6 +31,8 @@ module Homebrew
       #
       # @api public
       class Sourceforge
+        extend T::Sig
+
         NICE_NAME = "SourceForge"
 
         # The `Regexp` used to determine if the strategy applies to the URL.
@@ -45,8 +47,38 @@ module Homebrew
         #
         # @param url [String] the URL to match against
         # @return [Boolean]
+        sig { params(url: String).returns(T::Boolean) }
         def self.match?(url)
           URL_MATCH_REGEX.match?(url)
+        end
+
+        # Extracts information from a provided URL and uses it to generate
+        # various input values used by the strategy to check for new versions.
+        # Some of these values act as defaults and can be overridden in a
+        # `livecheck` block.
+        #
+        # @param url [String] the URL used to generate values
+        # @return [Hash]
+        sig { params(url: String).returns(T::Hash[Symbol, T.untyped]) }
+        def self.generate_input_values(url)
+          values = {}
+
+          match = url.match(URL_MATCH_REGEX)
+          return values if match.blank?
+
+          # Don't generate a URL if the URL already points to the RSS feed
+          unless url.match?(%r{/rss(?:/?$|\?)})
+            values[:url] = "https://sourceforge.net/projects/#{match[:project_name]}/rss"
+          end
+
+          regex_name = Regexp.escape(T.must(match[:project_name])).gsub("\\-", "-")
+
+          # It may be possible to improve the generated regex but there's quite
+          # a bit of variation between projects and it can be challenging to
+          # create something that works for most URLs.
+          values[:regex] = %r{url=.*?/#{regex_name}/files/.*?[-_/](\d+(?:[-.]\d+)+)[-_/%.]}i
+
+          values
         end
 
         # Generates a URL and regex (if one isn't provided) and passes them
@@ -55,17 +87,25 @@ module Homebrew
         # @param url [String] the URL of the content to check
         # @param regex [Regexp] a regex used for matching versions in content
         # @return [Hash]
-        def self.find_versions(url, regex = nil, &block)
-          match = url.match(URL_MATCH_REGEX)
+        sig {
+          params(
+            url:    String,
+            regex:  T.nilable(Regexp),
+            unused: T.nilable(T::Hash[Symbol, T.untyped]),
+            block:  T.nilable(
+              T.proc.params(arg0: String, arg1: Regexp).returns(T.any(String, T::Array[String], NilClass)),
+            ),
+          ).returns(T::Hash[Symbol, T.untyped])
+        }
+        def self.find_versions(url:, regex: nil, **unused, &block)
+          generated = generate_input_values(url)
 
-          page_url = "https://sourceforge.net/projects/#{match[:project_name]}/rss"
-
-          # It may be possible to improve the default regex but there's quite a
-          # bit of variation between projects and it can be challenging to
-          # create something that works for most URLs.
-          regex ||= %r{url=.*?/#{Regexp.escape(match[:project_name])}/files/.*?[-_/](\d+(?:[-.]\d+)+)[-_/%.]}i
-
-          PageMatch.find_versions(page_url, regex, &block)
+          T.unsafe(PageMatch).find_versions(
+            url:   generated[:url] || url,
+            regex: regex || generated[:regex],
+            **unused,
+            &block
+          )
         end
       end
     end

@@ -7,7 +7,7 @@ describe GitHub do
   describe "::search_code", :needs_network do
     it "queries GitHub code with the passed parameters" do
       results = described_class.search_code(repo: "Homebrew/brew", path: "/",
-                                            filename: "readme", language: "markdown")
+                                            filename: "readme", extension: "md")
 
       expect(results.count).to eq(1)
       expect(results.first["name"]).to eq("README.md")
@@ -50,6 +50,13 @@ describe GitHub do
     end
   end
 
+  describe "::public_member_usernames", :needs_network do
+    it "gets the usernames of all publicly visible members of the organisation" do
+      response = described_class.public_member_usernames("Homebrew")
+      expect(response).to be_a(Array)
+    end
+  end
+
   describe "::sponsors_by_tier", :needs_network do
     it "errors on an unauthenticated token" do
       expect {
@@ -59,7 +66,7 @@ describe GitHub do
   end
 
   describe "::get_artifact_url", :needs_network do
-    it "fails to find a nonexistant workflow" do
+    it "fails to find a nonexistent workflow" do
       expect {
         described_class.get_artifact_url(
           described_class.get_workflow_run("Homebrew", "homebrew-core", 1),
@@ -70,16 +77,16 @@ describe GitHub do
     it "fails to find artifacts that don't exist" do
       expect {
         described_class.get_artifact_url(
-          described_class.get_workflow_run("Homebrew", "homebrew-core", 51971, artifact_name: "false_bottles"),
+          described_class.get_workflow_run("Homebrew", "homebrew-core", 79751, artifact_name: "false_bottles"),
         )
       }.to raise_error(/No artifact .+ was found/)
     end
 
     it "gets an artifact link" do
       url = described_class.get_artifact_url(
-        described_class.get_workflow_run("Homebrew", "homebrew-core", 51971, artifact_name: "bottles"),
+        described_class.get_workflow_run("Homebrew", "homebrew-core", 79751, artifact_name: "bottles"),
       )
-      expect(url).to eq("https://api.github.com/repos/Homebrew/homebrew-core/actions/artifacts/3557392/zip")
+      expect(url).to eq("https://api.github.com/repos/Homebrew/homebrew-core/actions/artifacts/70494047/zip")
     end
   end
 

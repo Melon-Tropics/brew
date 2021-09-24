@@ -10,12 +10,18 @@ module Homebrew
   class BundleVersion
     extend T::Sig
 
+    include Comparable
+
     extend SystemCommand::Mixin
 
     sig { params(info_plist_path: Pathname).returns(T.nilable(T.attached_class)) }
     def self.from_info_plist(info_plist_path)
       plist = system_command!("plutil", args: ["-convert", "xml1", "-o", "-", info_plist_path]).plist
+      from_info_plist_content(plist)
+    end
 
+    sig { params(plist: T::Hash[String, T.untyped]).returns(T.nilable(T.attached_class)) }
+    def self.from_info_plist_content(plist)
       short_version = plist["CFBundleShortVersionString"].presence
       version = plist["CFBundleVersion"].presence
 
@@ -24,15 +30,15 @@ module Homebrew
 
     sig { params(package_info_path: Pathname).returns(T.nilable(T.attached_class)) }
     def self.from_package_info(package_info_path)
-      Homebrew.install_bundler_gems!
-      require "nokogiri"
+      require "rexml/document"
 
-      xml = Nokogiri::XML(package_info_path.read)
+      xml = REXML::Document.new(package_info_path.read)
 
-      bundle_id = xml.xpath("//pkg-info//bundle-version//bundle").first&.attr("id")
-      return unless bundle_id
+      bundle_version_bundle = xml.get_elements("//pkg-info//bundle-version//bundle").first
+      bundle_id = bundle_version_bundle["id"] if bundle_version_bundle
+      return if bundle_id.blank?
 
-      bundle = xml.xpath("//pkg-info//bundle").find { |b| b["id"] == bundle_id }
+      bundle = xml.get_elements("//pkg-info//bundle").find { |b| b["id"] == bundle_id }
       return unless bundle
 
       short_version = bundle["CFBundleShortVersionString"]
@@ -55,9 +61,14 @@ module Homebrew
     end
 
     def <=>(other)
-      [version, short_version].map { |v| v&.yield_self(&Version.public_method(:new)) } <=>
-        [other.version, other.short_version].map { |v| v&.yield_self(&Version.public_method(:new)) }
+      [version, short_version].map { |v| v&.yield_self(&Version.public_method(:new)) || Version::NULL } <=>
+        [other.version, other.short_version].map { |v| v&.yield_self(&Version.public_method(:new)) || Version::NULL }
     end
+
+    def ==(other)
+      instance_of?(other.class) && short_version == other.short_version && version == other.version
+    end
+    alias eql? ==
 
     # Create a nicely formatted version (on a best effort basis).
     sig { returns(String) }

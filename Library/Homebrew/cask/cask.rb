@@ -6,6 +6,7 @@ require "cask/config"
 require "cask/dsl"
 require "cask/metadata"
 require "searchable"
+require "api"
 
 module Cask
   # An instance of a cask.
@@ -19,7 +20,7 @@ module Cask
     extend Searchable
     include Metadata
 
-    attr_reader :token, :sourcefile_path, :config, :default_config
+    attr_reader :token, :sourcefile_path, :source, :config, :default_config
 
     def self.each(&block)
       return to_enum unless block
@@ -37,9 +38,10 @@ module Cask
       @tap
     end
 
-    def initialize(token, sourcefile_path: nil, tap: nil, config: nil, &block)
+    def initialize(token, sourcefile_path: nil, source: nil, tap: nil, config: nil, &block)
       @token = token
       @sourcefile_path = sourcefile_path
+      @source = source
       @tap = tap
       @block = block
 
@@ -81,6 +83,23 @@ module Cask
                           .reverse
     end
 
+    def os_versions
+      @os_versions ||= begin
+        version_os_hash = {}
+        actual_version = MacOS.full_version.to_s
+
+        MacOS::Version::SYMBOLS.each do |os_name, os_version|
+          MacOS.full_version = os_version
+          cask = CaskLoader.load(token)
+          version_os_hash[os_name] = cask.version if cask.version != version
+        end
+
+        version_os_hash
+      ensure
+        MacOS.full_version = actual_version
+      end
+    end
+
     def full_name
       return token if tap.nil?
       return token if tap.user == "Homebrew"
@@ -102,45 +121,56 @@ module Cask
 
     def installed_caskfile
       installed_version = timestamped_versions.last
-      metadata_master_container_path.join(*installed_version, "Casks", "#{token}.rb")
+      metadata_main_container_path.join(*installed_version, "Casks", "#{token}.rb")
     end
 
     def config_path
-      metadata_master_container_path/"config.json"
+      metadata_main_container_path/"config.json"
     end
 
     def caskroom_path
       @caskroom_path ||= Caskroom.path.join(token)
     end
 
-    def outdated?(greedy: false)
-      !outdated_versions(greedy: greedy).empty?
+    def outdated?(greedy: false, greedy_latest: false, greedy_auto_updates: false)
+      !outdated_versions(greedy: greedy, greedy_latest: greedy_latest,
+                         greedy_auto_updates: greedy_auto_updates).empty?
     end
 
-    def outdated_versions(greedy: false)
+    def outdated_versions(greedy: false, greedy_latest: false, greedy_auto_updates: false)
       # special case: tap version is not available
       return [] if version.nil?
 
-      if greedy
+      if greedy || (greedy_latest && greedy_auto_updates) || (greedy_auto_updates && auto_updates)
         return versions if version.latest?
+      elsif greedy_latest && version.latest?
+        return versions
       elsif auto_updates
         return []
+      end
+
+      latest_version = if ENV["HOMEBREW_INSTALL_FROM_API"].present? &&
+                          (latest_cask_version = Homebrew::API::Versions.latest_cask_version(token))
+        DSL::Version.new latest_cask_version.to_s
+      else
+        version
       end
 
       installed = versions
       current   = installed.last
 
       # not outdated unless there is a different version on tap
-      return [] if current == version
+      return [] if current == latest_version
 
       # collect all installed versions that are different than tap version and return them
-      installed.reject { |v| v == version }
+      installed.reject { |v| v == latest_version }
     end
 
-    def outdated_info(greedy, verbose, json)
+    def outdated_info(greedy, verbose, json, greedy_latest, greedy_auto_updates)
       return token if !verbose && !json
 
-      installed_versions = outdated_versions(greedy: greedy).join(", ")
+      installed_versions = outdated_versions(greedy: greedy, greedy_latest: greedy_latest,
+                                             greedy_auto_updates: greedy_auto_updates).join(", ")
 
       if json
         {
@@ -162,19 +192,22 @@ module Cask
     end
 
     def eql?(other)
-      token == other.token
+      instance_of?(other.class) && token == other.token
     end
     alias == eql?
 
     def to_h
       {
         "token"          => token,
+        "full_token"     => full_name,
+        "tap"            => tap&.name,
         "name"           => name,
         "desc"           => desc,
         "homepage"       => homepage,
         "url"            => url,
         "appcast"        => appcast,
         "version"        => version,
+        "versions"       => os_versions,
         "installed"      => versions.last,
         "outdated"       => outdated?,
         "sha256"         => sha256,

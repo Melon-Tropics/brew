@@ -108,7 +108,7 @@ module Homebrew
 
       ohai "Homebrew completions for external commands are unlinked by default!"
       puts <<~EOS
-        To opt-in to automatically linking external tap shell competion files, run:
+        To opt-in to automatically linking external tap shell completion files, run:
           brew completions link
         Then, follow the directions at #{Formatter.url("https://docs.brew.sh/Shell-Completion")}
       EOS
@@ -129,8 +129,6 @@ module Homebrew
 
     sig { params(command: String).returns(T::Boolean) }
     def command_gets_completions?(command)
-      return false if command.start_with? "cask " # TODO: (2.8) remove when `brew cask` commands are removed
-
       command_options(command).any?
     end
 
@@ -167,7 +165,7 @@ module Homebrew
       return unless command_gets_completions? command
 
       named_completion_string = ""
-      if types = Commands.named_args_type(command)
+      if (types = Commands.named_args_type(command))
         named_args_strings, named_args_types = types.partition { |type| type.is_a? String }
 
         named_args_types.each do |type|
@@ -182,13 +180,14 @@ module Homebrew
       <<~COMPLETION
         _brew_#{Commands.method_name command}() {
           local cur="${COMP_WORDS[COMP_CWORD]}"
-          case "$cur" in
+          case "${cur}" in
             -*)
               __brewcomp "
               #{command_options(command).keys.sort.join("\n      ")}
               "
               return
               ;;
+            *)
           esac#{named_completion_string}
         }
       COMPLETION
@@ -215,29 +214,51 @@ module Homebrew
     def generate_zsh_subcommand_completion(command)
       return unless command_gets_completions? command
 
-      options = command_options(command).sort.map do |opt, desc|
-        next opt if desc.blank?
+      options = command_options(command)
 
-        conflicts = generate_zsh_option_exclusions(command, opt)
-        "#{conflicts}#{opt}[#{format_description desc}]"
-      end
-      if types = Commands.named_args_type(command)
+      args_options = []
+      if (types = Commands.named_args_type(command))
         named_args_strings, named_args_types = types.partition { |type| type.is_a? String }
 
         named_args_types.each do |type|
           next unless ZSH_NAMED_ARGS_COMPLETION_FUNCTION_MAPPING.key? type
 
-          options << "::#{type}:#{ZSH_NAMED_ARGS_COMPLETION_FUNCTION_MAPPING[type]}"
+          args_options << "- #{type}"
+          opt = "--#{type.to_s.gsub(/(installed|outdated)_/, "")}"
+          if options.key?(opt)
+            desc = options[opt]
+
+            if desc.blank?
+              args_options << opt
+            else
+              conflicts = generate_zsh_option_exclusions(command, opt)
+              args_options << "#{conflicts}#{opt}[#{format_description desc}]"
+            end
+
+            options.delete(opt)
+          end
+          args_options << "*::#{type}:#{ZSH_NAMED_ARGS_COMPLETION_FUNCTION_MAPPING[type]}"
         end
 
-        options << "::subcommand:(#{named_args_strings.join(" ")})" if named_args_strings.any?
+        if named_args_strings.any?
+          args_options << "- subcommand"
+          args_options << "*::subcommand:(#{named_args_strings.join(" ")})"
+        end
       end
+
+      options = options.sort.map do |opt, desc|
+        next opt if desc.blank?
+
+        conflicts = generate_zsh_option_exclusions(command, opt)
+        "#{conflicts}#{opt}[#{format_description desc}]"
+      end
+      options += args_options
 
       <<~COMPLETION
         # brew #{command}
         _brew_#{Commands.method_name command}() {
           _arguments \\
-            #{options.map! { |opt| "'#{opt}'" }.join(" \\\n    ")}
+            #{options.map! { |opt| opt.start_with?("- ") ? opt : "'#{opt}'" }.join(" \\\n    ")}
         }
       COMPLETION
     end
@@ -291,14 +312,25 @@ module Homebrew
 
       subcommands = []
       named_args = []
-      if types = Commands.named_args_type(command)
+      if (types = Commands.named_args_type(command))
         named_args_strings, named_args_types = types.partition { |type| type.is_a? String }
 
         named_args_types.each do |type|
           next unless FISH_NAMED_ARGS_COMPLETION_FUNCTION_MAPPING.key? type
 
           named_arg_function = FISH_NAMED_ARGS_COMPLETION_FUNCTION_MAPPING[type]
-          named_args << "__fish_brew_complete_arg '#{command}' -a '(#{named_arg_function})'"
+          named_arg_prefix = "__fish_brew_complete_arg '#{command}; and not __fish_seen_argument"
+
+          formula_option = command_options(command).key?("--formula")
+          cask_option = command_options(command).key?("--cask")
+
+          named_args << if formula_option && cask_option && type.to_s.end_with?("formula")
+            "#{named_arg_prefix} -l cask -l casks' -a '(#{named_arg_function})'"
+          elsif formula_option && cask_option && type.to_s.end_with?("cask")
+            "#{named_arg_prefix} -l formula -l formulae' -a '(#{named_arg_function})'"
+          else
+            "__fish_brew_complete_arg '#{command}' -a '(#{named_arg_function})'"
+          end
         end
 
         named_args_strings.each do |subcommand|

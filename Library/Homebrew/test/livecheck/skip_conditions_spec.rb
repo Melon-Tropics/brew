@@ -264,57 +264,57 @@ describe Homebrew::Livecheck::SkipConditions do
     }
   end
 
-  describe "::skip_conditions" do
-    context "a deprecated formula without a livecheckable" do
+  describe "::skip_information" do
+    context "when a formula without a livecheckable is deprecated" do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:deprecated]))
           .to eq(status_hashes[:formula][:deprecated])
       end
     end
 
-    context "a disabled formula without a livecheckable" do
+    context "when a formula without a livecheckable is disabled" do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:disabled]))
           .to eq(status_hashes[:formula][:disabled])
       end
     end
 
-    context "a versioned formula without a livecheckable" do
+    context "when a formula without a livecheckable is versioned" do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:versioned]))
           .to eq(status_hashes[:formula][:versioned])
       end
     end
 
-    context "a HEAD-only formula that is not installed" do
-      it "skips " do
+    context "when a formula is HEAD-only and not installed" do
+      it "skips" do
         expect(skip_conditions.skip_information(formulae[:head_only]))
           .to eq(status_hashes[:formula][:head_only])
       end
     end
 
-    context "a formula with a GitHub Gist stable URL" do
+    context "when a formula without a livecheckable has a GitHub Gist stable URL" do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:gist]))
           .to eq(status_hashes[:formula][:gist])
       end
     end
 
-    context "a formula with a Google Code Archive stable URL" do
+    context "when a formula without a livecheckable has a Google Code Archive stable URL" do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:google_code_archive]))
           .to eq(status_hashes[:formula][:google_code_archive])
       end
     end
 
-    context "a formula with an Internet Archive stable URL" do
+    context "when a formula without a livecheckable has an Internet Archive stable URL" do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:internet_archive]))
           .to eq(status_hashes[:formula][:internet_archive])
       end
     end
 
-    context "a formula with a `livecheck` block containing `skip`" do
+    context "when a formula has a `livecheck` block containing `skip`" do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:skip]))
           .to eq(status_hashes[:formula][:skip])
@@ -324,28 +324,28 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a discontinued cask without a livecheckable" do
+    context "when a cask without a livecheckable is discontinued" do
       it "skips" do
         expect(skip_conditions.skip_information(casks[:discontinued]))
           .to eq(status_hashes[:cask][:discontinued])
       end
     end
 
-    context "a cask containing `version :latest` without a livecheckable" do
+    context "when a cask without a livecheckable has `version :latest`" do
       it "skips" do
         expect(skip_conditions.skip_information(casks[:latest]))
           .to eq(status_hashes[:cask][:latest])
       end
     end
 
-    context "a cask containing an unversioned URL without a livecheckable" do
+    context "when a cask without a livecheckable has an unversioned URL" do
       it "skips" do
         expect(skip_conditions.skip_information(casks[:unversioned]))
           .to eq(status_hashes[:cask][:unversioned])
       end
     end
 
-    context "a cask with a `livecheck` block containing `skip`" do
+    context "when a cask has a `livecheck` block containing `skip`" do
       it "skips" do
         expect(skip_conditions.skip_information(casks[:skip]))
           .to eq(status_hashes[:cask][:skip])
@@ -364,8 +364,110 @@ describe Homebrew::Livecheck::SkipConditions do
     end
   end
 
+  describe "::referenced_skip_information" do
+    let(:original_name) { "original" }
+
+    context "when a formula without a livecheckable is deprecated" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(formulae[:deprecated], original_name) }
+          .to raise_error(RuntimeError, "Referenced formula (test_deprecated) is skipped as deprecated")
+      end
+    end
+
+    context "when a formula without a livecheckable is disabled" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(formulae[:disabled], original_name) }
+          .to raise_error(RuntimeError, "Referenced formula (test_disabled) is skipped as disabled")
+      end
+    end
+
+    context "when a formula without a livecheckable is versioned" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(formulae[:versioned], original_name) }
+          .to raise_error(RuntimeError, "Referenced formula (test@0.0.1) is skipped as versioned")
+      end
+    end
+
+    context "when a formula is HEAD-only and not installed" do
+      it "skips" do
+        expect(skip_conditions.referenced_skip_information(formulae[:head_only], original_name))
+          .to eq(status_hashes[:formula][:head_only].merge({ formula: original_name }))
+      end
+    end
+
+    context "when a formula without a livecheckable has a GitHub Gist stable URL" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(formulae[:gist], original_name) }
+          .to raise_error(RuntimeError, "Referenced formula (test_gist) is automatically skipped")
+      end
+    end
+
+    context "when a formula without a livecheckable has a Google Code Archive stable URL" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(formulae[:google_code_archive], original_name) }
+          .to raise_error(RuntimeError, "Referenced formula (test_google_code_archive) is automatically skipped")
+      end
+    end
+
+    context "when a formula without a livecheckable has an Internet Archive stable URL" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(formulae[:internet_archive], original_name) }
+          .to raise_error(RuntimeError, "Referenced formula (test_internet_archive) is automatically skipped")
+      end
+    end
+
+    context "when a formula has a `livecheck` block containing `skip`" do
+      it "skips" do
+        expect(skip_conditions.referenced_skip_information(formulae[:skip], original_name))
+          .to eq(status_hashes[:formula][:skip].merge({ formula: original_name }))
+
+        expect(skip_conditions.referenced_skip_information(formulae[:skip_with_message], original_name))
+          .to eq(status_hashes[:formula][:skip_with_message].merge({ formula: original_name }))
+      end
+    end
+
+    context "when a cask without a livecheckable is discontinued" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(casks[:discontinued], original_name) }
+          .to raise_error(RuntimeError, "Referenced cask (test_discontinued) is skipped as discontinued")
+      end
+    end
+
+    context "when a cask without a livecheckable has `version :latest`" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(casks[:latest], original_name) }
+          .to raise_error(RuntimeError, "Referenced cask (test_latest) is skipped as latest")
+      end
+    end
+
+    context "when a cask without a livecheckable has an unversioned URL" do
+      it "errors" do
+        expect { skip_conditions.referenced_skip_information(casks[:unversioned], original_name) }
+          .to raise_error(RuntimeError, "Referenced cask (test_unversioned) is skipped as unversioned")
+      end
+    end
+
+    context "when a cask has a `livecheck` block containing `skip`" do
+      it "skips" do
+        expect(skip_conditions.referenced_skip_information(casks[:skip], original_name))
+          .to eq(status_hashes[:cask][:skip].merge({ cask: original_name }))
+
+        expect(skip_conditions.referenced_skip_information(casks[:skip_with_message], original_name))
+          .to eq(status_hashes[:cask][:skip_with_message].merge({ cask: original_name }))
+      end
+    end
+
+    it "returns an empty hash for a non-skippable formula" do
+      expect(skip_conditions.referenced_skip_information(formulae[:basic], original_name)).to eq(nil)
+    end
+
+    it "returns an empty hash for a non-skippable cask" do
+      expect(skip_conditions.referenced_skip_information(casks[:basic], original_name)).to eq(nil)
+    end
+  end
+
   describe "::print_skip_information" do
-    context "a deprecated formula without a livecheckable" do
+    context "when a formula without a livecheckable is deprecated" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:formula][:deprecated]) }
           .to output("test_deprecated : deprecated\n").to_stdout
@@ -373,7 +475,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a disabled formula without a livecheckable" do
+    context "when a formula without a livecheckable is disabled" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:formula][:disabled]) }
           .to output("test_disabled : disabled\n").to_stdout
@@ -381,7 +483,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a versioned formula without a livecheckable" do
+    context "when a formula without a livecheckable is versioned" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:formula][:versioned]) }
           .to output("test@0.0.1 : versioned\n").to_stdout
@@ -389,7 +491,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a HEAD-only formula that is not installed" do
+    context "when a formula is HEAD-only and not installed" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:formula][:head_only]) }
           .to output("test_head_only : HEAD only formula must be installed to be livecheckable\n").to_stdout
@@ -397,7 +499,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a formula with a GitHub Gist stable URL" do
+    context "when a formula has a GitHub Gist stable URL" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:formula][:gist]) }
           .to output("test_gist : skipped - Stable URL is a GitHub Gist\n").to_stdout
@@ -405,7 +507,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a formula with a Google Code Archive stable URL" do
+    context "when a formula has a Google Code Archive stable URL" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:formula][:google_code_archive]) }
           .to output("test_google_code_archive : skipped - Stable URL is from Google Code Archive\n").to_stdout
@@ -413,7 +515,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a formula with an Internet Archive stable URL" do
+    context "when a formula has an Internet Archive stable URL" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:formula][:internet_archive]) }
           .to output("test_internet_archive : skipped - Stable URL is from Internet Archive\n").to_stdout
@@ -421,7 +523,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a formula with a `livecheck` block containing `skip`" do
+    context "when a formula has a `livecheck` block containing `skip`" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:formula][:skip]) }
           .to output("test_skip : skipped\n").to_stdout
@@ -433,7 +535,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a discontinued cask without a livecheckable" do
+    context "when the cask is discontinued without a livecheckable" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:cask][:discontinued]) }
           .to output("test_discontinued : discontinued\n").to_stdout
@@ -441,7 +543,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a cask containing `version :latest` without a livecheckable" do
+    context "when the cask has `version :latest` without a livecheckable" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:cask][:latest]) }
           .to output("test_latest : latest\n").to_stdout
@@ -449,7 +551,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a cask containing an unversioned URL without a livecheckable" do
+    context "when the cask has an unversioned URL without a livecheckable" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:cask][:unversioned]) }
           .to output("test_unversioned : unversioned\n").to_stdout
@@ -457,7 +559,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a cask with a `livecheck` block containing `skip`" do
+    context "when the cask has a `livecheck` block containing `skip`" do
       it "prints skip information" do
         expect { skip_conditions.print_skip_information(status_hashes[:cask][:skip]) }
           .to output("test_skip : skipped\n").to_stdout
@@ -469,7 +571,7 @@ describe Homebrew::Livecheck::SkipConditions do
       end
     end
 
-    context "a blank parameter" do
+    context "with a blank parameter" do
       it "prints nothing" do
         expect { skip_conditions.print_skip_information({}) }
           .to not_to_output.to_stdout

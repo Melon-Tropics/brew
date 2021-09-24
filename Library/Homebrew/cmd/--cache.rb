@@ -24,12 +24,16 @@ module Homebrew
              description: "Show the cache file used when building from source."
       switch "--force-bottle",
              description: "Show the cache file used when pouring a bottle."
+      flag "--bottle-tag",
+           description: "Show the cache file used when pouring a bottle for the given tag."
+      switch "--HEAD",
+             description: "Show the cache file used when building from HEAD."
       switch "--formula",
              description: "Only show cache files for formulae."
       switch "--cask",
              description: "Only show cache files for casks."
 
-      conflicts "--build-from-source", "--force-bottle", "--cask"
+      conflicts "--build-from-source", "--force-bottle", "--bottle-tag", "--HEAD", "--cask"
       conflicts "--formula", "--cask"
 
       named_args [:formula, :cask]
@@ -59,7 +63,9 @@ module Homebrew
   sig { params(formula: Formula, args: CLI::Args).void }
   def print_formula_cache(formula, args:)
     if fetch_bottle?(formula, args: args)
-      puts formula.bottle.cached_download
+      puts formula.bottle_for_tag(args.bottle_tag&.to_sym).cached_download
+    elsif args.HEAD?
+      puts formula.head.cached_download
     else
       puts formula.cached_download
     end

@@ -53,6 +53,8 @@ module Homebrew
       comma_array "--mirror",
                   description: "Use the specified <URL> as a mirror URL. If <URL> is a comma-separated list "\
                                "of URLs, multiple mirrors will be added."
+      flag   "--fork-org=",
+             description: "Use the specified GitHub organization for forking."
       flag   "--version=",
              description: "Use the specified <version> to override the value parsed from the URL or tag. Note "\
                           "that `--version=0` can be used to delete an existing version override from a "\
@@ -85,10 +87,12 @@ module Homebrew
   def use_correct_linux_tap(formula, args:)
     default_origin_branch = formula.tap.path.git_origin_branch
 
-    return formula.tap.full_name, "origin", default_origin_branch, "-" if !OS.linux? || !formula.tap.core_tap?
+    if !OS.linux? || !formula.tap.core_tap? || Homebrew::EnvConfig.force_homebrew_on_linux?
+      return formula.tap.remote_repo, "origin", default_origin_branch, "-"
+    end
 
-    tap_full_name = formula.tap.full_name.gsub("linuxbrew", "homebrew")
-    homebrew_core_url = "https://github.com/#{tap_full_name}"
+    tap_remote_repo = formula.tap.full_name.gsub("linuxbrew", "homebrew")
+    homebrew_core_url = "https://github.com/#{tap_remote_repo}"
     homebrew_core_remote = "homebrew"
     previous_branch = formula.tap.path.git_branch || "master"
     formula_path = formula.path.relative_path_from(formula.tap.path)
@@ -99,11 +103,11 @@ module Homebrew
       ohai "git fetch #{homebrew_core_remote} HEAD #{default_origin_branch}"
       ohai "git cat-file -e #{full_origin_branch}:#{formula_path}"
       ohai "git checkout #{full_origin_branch}"
-      return tap_full_name, homebrew_core_remote, default_origin_branch, previous_branch
+      return tap_remote_repo, homebrew_core_remote, default_origin_branch, previous_branch
     end
 
     formula.tap.path.cd do
-      unless Utils.popen_read("git remote -v").match?(%r{^homebrew.*Homebrew/homebrew-core.*$})
+      unless Utils.popen_read("git", "remote", "-v").match?(%r{^homebrew.*Homebrew/homebrew-core.*$})
         ohai "Adding #{homebrew_core_remote} remote"
         safe_system "git", "remote", "add", homebrew_core_remote, homebrew_core_url
       end
@@ -112,7 +116,7 @@ module Homebrew
       if quiet_system "git", "cat-file", "-e", "#{full_origin_branch}:#{formula_path}"
         ohai "#{formula.full_name} exists in #{full_origin_branch}."
         safe_system "git", "checkout", full_origin_branch
-        return tap_full_name, homebrew_core_remote, default_origin_branch, previous_branch
+        return tap_remote_repo, homebrew_core_remote, default_origin_branch, previous_branch
       end
     end
   end
@@ -145,11 +149,15 @@ module Homebrew
     formula_spec = formula.stable
     odie "#{formula}: no stable specification found!" if formula_spec.blank?
 
-    tap_full_name, remote, remote_branch, previous_branch = use_correct_linux_tap(formula, args: args)
-    check_open_pull_requests(formula, tap_full_name, args: args)
+    # This will be run by `brew audit` later so run it first to not start
+    # spamming during normal output.
+    Homebrew.install_bundler_gems!
+
+    tap_remote_repo, remote, remote_branch, previous_branch = use_correct_linux_tap(formula, args: args)
+    check_open_pull_requests(formula, tap_remote_repo, args: args)
 
     new_version = args.version
-    check_new_version(formula, tap_full_name, version: new_version, args: args) if new_version.present?
+    check_new_version(formula, tap_remote_repo, version: new_version, args: args) if new_version.present?
 
     opoo "This formula has patches that may be resolved upstream." if formula.patchlist.present?
     if formula.resources.any? { |resource| !resource.name.start_with?("homebrew-") }
@@ -173,10 +181,10 @@ module Homebrew
     old_version = old_formula_version.to_s
     forced_version = new_version.present?
     new_url_hash = if new_url.present? && new_hash.present?
-      check_new_version(formula, tap_full_name, url: new_url, args: args) if new_version.blank?
+      check_new_version(formula, tap_remote_repo, url: new_url, args: args) if new_version.blank?
       true
     elsif new_tag.present? && new_revision.present?
-      check_new_version(formula, tap_full_name, url: old_url, tag: new_tag, args: args) if new_version.blank?
+      check_new_version(formula, tap_remote_repo, url: old_url, tag: new_tag, args: args) if new_version.blank?
       false
     elsif old_hash.blank?
       if new_tag.blank? && new_version.blank? && new_revision.blank?
@@ -191,9 +199,9 @@ module Homebrew
             and old tag are both #{new_tag}.
           EOS
         end
-        check_new_version(formula, tap_full_name, url: old_url, tag: new_tag, args: args) if new_version.blank?
+        check_new_version(formula, tap_remote_repo, url: old_url, tag: new_tag, args: args) if new_version.blank?
         resource_path, forced_version = fetch_resource(formula, new_version, old_url, tag: new_tag)
-        new_revision = Utils.popen_read("git -C \"#{resource_path}\" rev-parse -q --verify HEAD")
+        new_revision = Utils.popen_read("git", "-C", resource_path.to_s, "rev-parse", "-q", "--verify", "HEAD")
         new_revision = new_revision.strip
       elsif new_revision.blank?
         odie "#{formula}: the current URL requires specifying a `--revision=` argument."
@@ -218,7 +226,7 @@ module Homebrew
             #{new_url}
         EOS
       end
-      check_new_version(formula, tap_full_name, url: new_url, args: args) if new_version.blank?
+      check_new_version(formula, tap_remote_repo, url: new_url, args: args) if new_version.blank?
       resource_path, forced_version = fetch_resource(formula, new_version, new_url)
       Utils::Tar.validate_file(resource_path)
       new_hash = resource_path.sha256
@@ -381,7 +389,7 @@ module Homebrew
       commit_message:   "#{formula.name} #{new_formula_version}",
       previous_branch:  previous_branch,
       tap:              formula.tap,
-      tap_full_name:    tap_full_name,
+      tap_remote_repo:  tap_remote_repo,
       pr_message:       pr_message,
     }
     GitHub.create_bump_pr(pr_info, args: args)
@@ -454,21 +462,21 @@ module Homebrew
     end
   end
 
-  def check_open_pull_requests(formula, tap_full_name, args:)
-    GitHub.check_for_duplicate_pull_requests(formula.name, tap_full_name,
+  def check_open_pull_requests(formula, tap_remote_repo, args:)
+    GitHub.check_for_duplicate_pull_requests(formula.name, tap_remote_repo,
                                              state: "open",
                                              file:  formula.path.relative_path_from(formula.tap.path).to_s,
                                              args:  args)
   end
 
-  def check_new_version(formula, tap_full_name, args:, version: nil, url: nil, tag: nil)
+  def check_new_version(formula, tap_remote_repo, args:, version: nil, url: nil, tag: nil)
     if version.nil?
       specs = {}
       specs[:tag] = tag if tag.present?
       version = Version.detect(url, **specs)
     end
     check_throttle(formula, version)
-    check_closed_pull_requests(formula, tap_full_name, args: args, version: version)
+    check_closed_pull_requests(formula, tap_remote_repo, args: args, version: version)
   end
 
   def check_throttle(formula, new_version)
@@ -481,9 +489,9 @@ module Homebrew
     odie "#{formula} should only be updated every #{throttled_rate} releases on multiples of #{throttled_rate}"
   end
 
-  def check_closed_pull_requests(formula, tap_full_name, args:, version:)
+  def check_closed_pull_requests(formula, tap_remote_repo, args:, version:)
     # if we haven't already found open requests, try for an exact match across closed requests
-    GitHub.check_for_duplicate_pull_requests(formula.name, tap_full_name,
+    GitHub.check_for_duplicate_pull_requests(formula.name, tap_remote_repo,
                                              version: version,
                                              state:   "closed",
                                              file:    formula.path.relative_path_from(formula.tap.path).to_s,

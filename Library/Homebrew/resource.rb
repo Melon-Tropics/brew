@@ -114,14 +114,15 @@ class Resource
   # A target or a block must be given, but not both.
   def unpack(target = nil)
     mktemp(download_name) do |staging|
-      downloader.stage
-      @source_modified_time = downloader.source_modified_time
-      apply_patches
-      if block_given?
-        yield ResourceStageContext.new(self, staging)
-      elsif target
-        target = Pathname(target)
-        target.install Pathname.pwd.children
+      downloader.stage do
+        @source_modified_time = downloader.source_modified_time
+        apply_patches
+        if block_given?
+          yield ResourceStageContext.new(self, staging)
+        elsif target
+          target = Pathname(target)
+          target.install Pathname.pwd.children
+        end
       end
     end
   end
@@ -173,6 +174,7 @@ class Resource
     @specs.merge!(specs)
     @using = @specs.delete(:using)
     @download_strategy = DownloadStrategyDetector.detect(url, using)
+    @downloader = nil
   end
 
   def version(val = nil)

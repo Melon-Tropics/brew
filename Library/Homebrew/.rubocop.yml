@@ -7,10 +7,6 @@ Layout/MultilineMethodCallIndentation:
   Exclude:
     - "**/*_spec.rb"
 
-# TODO: add parentheses for these and remove
-Lint/AssignmentInCondition:
-  Enabled: false
-
 # `formula do` uses nested method definitions
 Lint/NestedMethodDefinition:
   Exclude:
@@ -18,10 +14,12 @@ Lint/NestedMethodDefinition:
 
 # TODO: Try to bring down all metrics maximums.
 Metrics/AbcSize:
-  Max: 250
+  Max: 280
 Metrics/BlockLength:
   Max: 100
   Exclude:
+    # TODO: extract more of the bottling logic
+    - "dev-cmd/bottle.rb"
     - "test/**/*"
 Metrics/BlockNesting:
   Max: 5
@@ -37,8 +35,10 @@ Metrics/PerceivedComplexity:
 Metrics/MethodLength:
   Max: 260
 Metrics/ModuleLength:
-  Max: 600
+  Max: 500
   Exclude:
+    # TODO: extract more of the bottling logic
+    - "dev-cmd/bottle.rb"
     - "test/**/*"
 
 Naming/PredicateName:
@@ -55,3 +55,7 @@ Style/HashAsLastArrayItem:
 Style/BlockDelimiters:
   BracesRequiredMethods:
     - "sig"
+
+Bundler/GemFilename:
+  Exclude:
+    - "utils/gems.rb"

@@ -12,6 +12,7 @@ require "cask/cmd"
 require "cask/utils"
 require "cask/macos"
 require "upgrade"
+require "api"
 
 module Homebrew
   extend T::Sig
@@ -57,6 +58,9 @@ module Homebrew
           env:         :display_install_times,
           description: "Print install times for each formula at the end of the run.",
         }],
+        [:switch, "-g", "--git", {
+          description: "Create a Git repository, useful for creating patches to the software.",
+        }],
       ].each do |options|
         send(*options)
         conflicts "--cask", options[-2]
@@ -81,24 +85,67 @@ module Homebrew
   def reinstall
     args = reinstall_args.parse
 
-    FormulaInstaller.prevent_build_flags(args)
+    # We need to use the bottle API instead of just using the formula file
+    # from an installed keg because it will not contain bottle information.
+    # As a consequence, `brew reinstall` will also upgrade outdated formulae
+    if ENV["HOMEBREW_INSTALL_FROM_API"].present?
+      args.named.each do |name|
+        formula = Formulary.factory(name)
+        next unless formula.any_version_installed?
+        next if formula.tap.present? && !formula.core_formula?
+        next unless Homebrew::API::Bottle.available?(name)
 
-    Install.perform_preinstall_checks
+        Homebrew::API::Bottle.fetch_bottles(name)
+      rescue FormulaUnavailableError
+        next
+      end
+    end
 
     formulae, casks = args.named.to_formulae_and_casks(method: :resolve)
                           .partition { |o| o.is_a?(Formula) }
 
-    formulae.each do |f|
-      if f.pinned?
-        onoe "#{f.full_name} is pinned. You must unpin it to reinstall."
-        next
-      end
-      Migrator.migrate_if_needed(f, force: args.force?)
-      reinstall_formula(f, args: args)
-      Cleanup.install_formula_clean!(f)
+    if args.build_from_source? && !DevelopmentTools.installed?
+      raise BuildFlagsError.new(["--build-from-source"], bottled: formulae.all?(&:bottled?))
     end
 
-    Upgrade.check_installed_dependents(formulae, args: args)
+    Install.perform_preinstall_checks
+
+    formulae.each do |formula|
+      if formula.pinned?
+        onoe "#{formula.full_name} is pinned. You must unpin it to reinstall."
+        next
+      end
+      Migrator.migrate_if_needed(formula, force: args.force?)
+      reinstall_formula(
+        formula,
+        flags:                      args.flags_only,
+        installed_on_request:       args.named.present?,
+        force_bottle:               args.force_bottle?,
+        build_from_source_formulae: args.build_from_source_formulae,
+        interactive:                args.interactive?,
+        keep_tmp:                   args.keep_tmp?,
+        force:                      args.force?,
+        debug:                      args.debug?,
+        quiet:                      args.quiet?,
+        verbose:                    args.verbose?,
+        git:                        args.git?,
+      )
+      Cleanup.install_formula_clean!(formula)
+    end
+
+    Upgrade.check_installed_dependents(
+      formulae,
+      flags:                      args.flags_only,
+      installed_on_request:       args.named.present?,
+      force_bottle:               args.force_bottle?,
+      build_from_source_formulae: args.build_from_source_formulae,
+      interactive:                args.interactive?,
+      keep_tmp:                   args.keep_tmp?,
+      force:                      args.force?,
+      debug:                      args.debug?,
+      quiet:                      args.quiet?,
+      verbose:                    args.verbose?,
+    )
 
     if casks.any?
       Cask::Cmd::Reinstall.reinstall_casks(

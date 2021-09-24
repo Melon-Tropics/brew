@@ -96,17 +96,19 @@ module Language
       # @private
       def python_shebang_rewrite_info(python_path)
         Utils::Shebang::RewriteInfo.new(
-          %r{^#! ?/usr/bin/(env )?python([23](\.\d{1,2})?)?$},
-          28, # the length of "#! /usr/bin/env pythonx.yyy$"
-          python_path,
+          %r{^#! ?/usr/bin/(?:env )?python(?:[23](?:\.\d{1,2})?)?( |$)},
+          28, # the length of "#! /usr/bin/env pythonx.yyy "
+          "#{python_path}\\1",
         )
       end
 
       def detected_python_shebang(formula = self)
         python_deps = formula.deps.map(&:name).grep(/^python(@.*)?$/)
 
-        raise "Cannot detect Python shebang: formula does not depend on Python." if python_deps.empty?
-        raise "Cannot detect Python shebang: formula has multiple Python dependencies." if python_deps.length > 1
+        raise ShebangDetectionError.new("Python", "formula does not depend on Python") if python_deps.empty?
+        if python_deps.length > 1
+          raise ShebangDetectionError.new("Python", "formula has multiple Python dependencies")
+        end
 
         python_shebang_rewrite_info(Formula[python_deps.first].opt_bin/"python3")
       end
@@ -126,10 +128,10 @@ module Language
       #   or "python3.x")
       # @param formula [Formula] the active {Formula}
       # @return [Virtualenv] a {Virtualenv} instance
-      def virtualenv_create(venv_root, python = "python", formula = self)
+      def virtualenv_create(venv_root, python = "python", formula = self, system_site_packages: true)
         ENV.refurbish_args
         venv = Virtualenv.new formula, venv_root, python
-        venv.create
+        venv.create(system_site_packages: system_site_packages)
 
         # Find any Python bindings provided by recursive dependencies
         formula_deps = formula.recursive_dependencies
@@ -172,8 +174,8 @@ module Language
       # formula preference for python or python@x.y, or to resolve an ambiguous
       # case where it's not clear whether python or python@x.y should be the
       # default guess.
-      def virtualenv_install_with_resources(options = {})
-        python = options[:using]
+      def virtualenv_install_with_resources(using: nil, system_site_packages: true)
+        python = using
         if python.nil?
           wanted = python_names.select { |py| needs_python?(py) }
           raise FormulaUnknownPythonError, self if wanted.empty?
@@ -182,7 +184,7 @@ module Language
           python = wanted.first
           python = "python3" if python == "python"
         end
-        venv = virtualenv_create(libexec, python.delete("@"))
+        venv = virtualenv_create(libexec, python.delete("@"), system_site_packages: system_site_packages)
         venv.pip_install resources
         venv.pip_install_and_link buildpath
         venv
@@ -213,10 +215,12 @@ module Language
         # Obtains a copy of the virtualenv library and creates a new virtualenv on disk.
         #
         # @return [void]
-        def create
+        def create(system_site_packages: true)
           return if (@venv_root/"bin/python").exist?
 
-          @formula.system @python, "-m", "venv", @venv_root
+          args = ["-m", "venv"]
+          args << "--system-site-packages" if system_site_packages
+          @formula.system @python, *args, @venv_root
 
           # Robustify symlinks to survive python patch upgrades
           @venv_root.find do |f|
@@ -256,8 +260,6 @@ module Language
           targets = Array(targets)
           targets.each do |t|
             if t.respond_to? :stage
-              next if t.name.start_with? "homebrew-"
-
               t.stage { do_install Pathname.pwd }
             else
               t = t.lines.map(&:strip) if t.respond_to?(:lines) && t.include?("\n")
@@ -287,7 +289,7 @@ module Language
           targets = Array(targets)
           @formula.system @venv_root/"bin/pip", "install",
                           "-v", "--no-deps", "--no-binary", ":all:",
-                          "--no-user", "--ignore-installed", *targets
+                          "--ignore-installed", *targets
         end
       end
     end

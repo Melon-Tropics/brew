@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 require "utils/user"
@@ -77,6 +77,18 @@ module Cask
     sig { params(path: Pathname).returns(T::Boolean) }
     def self.path_occupied?(path)
       path.exist? || path.symlink?
+    end
+
+    sig { params(name: String).returns(String) }
+    def self.token_from(name)
+      name.downcase
+          .gsub("+", "-plus-")
+          .gsub("@", "-at-")
+          .gsub(/[ _·•]/, "-")
+          .gsub(/[^\w-]/, "")
+          .gsub(/--+/, "-")
+          .delete_prefix("-")
+          .delete_suffix("-")
     end
 
     sig { returns(String) }

@@ -15,6 +15,7 @@ module RuboCop
           bzip2
           cups
           curl
+          cyrus-sasl
           dyld-headers
           ed
           expat
@@ -41,7 +42,7 @@ module RuboCop
           net-snmp
           netcat
           openldap
-          openlibm
+          pcsc-lite
           pod2man
           rpcgen
           ruby
@@ -76,14 +77,13 @@ module RuboCop
           bash
           cpio
           expect
+          git
           groff
           gzip
           openssl
-          openssl@1.1
           perl
           php
           python
-          python@3
           rsync
           vim
           xz

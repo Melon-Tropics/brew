@@ -1,11 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 # Make sure this shim uses the same Ruby interpreter that is used by Homebrew.
-if [ -z "$HOMEBREW_RUBY_PATH" ]
+if [[ -z "${HOMEBREW_RUBY_PATH}" ]]
 then
   echo "${0##*/}: The build tool has reset ENV; --env=std required." >&2
   exit 1
 fi
-exec "$HOMEBREW_RUBY_PATH" --enable-frozen-string-literal --disable=gems,did_you_mean,rubyopt -x "$0" "$@"
+exec "${HOMEBREW_RUBY_PATH}" --enable-frozen-string-literal --disable=gems,did_you_mean,rubyopt -x "$0" "$@"
 #!/usr/bin/env ruby -W0
 
 require "pathname"
@@ -79,6 +79,8 @@ class Cmd
       "#{ENV["HOMEBREW_PREFIX"]}/opt/llvm/bin/#{Regexp.last_match(1)}"
     when /\w\+\+(-\d+(\.\d)?)?$/
       case ENV["HOMEBREW_CC"]
+      when "swift_clang"
+        "#{ENV["HOMEBREW_PREFIX"]}/opt/swift/libexec/bin/clang++"
       when /clang/
         "clang++"
       when /llvm-gcc/
@@ -91,6 +93,8 @@ class Cmd
       # HOMEBREW_CC regardless of what name under which the tool was invoked.
       if ENV["HOMEBREW_CC"] == "llvm_clang"
         "#{ENV["HOMEBREW_PREFIX"]}/opt/llvm/bin/clang"
+      elsif ENV["HOMEBREW_CC"] == "swift_clang"
+        "#{ENV["HOMEBREW_PREFIX"]}/opt/swift/libexec/bin/clang"
       else
         ENV["HOMEBREW_CC"]
       end
@@ -105,7 +109,7 @@ class Cmd
       return @args.dup
     end
 
-    args = if !refurbish_args? || tool == "ld" || configure?
+    args = if !refurbish_args? || mode == :ld || configure?
       @args.dup
     else
       refurbished_args
@@ -173,10 +177,12 @@ class Cmd
 
     case arg
     when /^-g\d?$/, /^-gstabs\d+/, "-gstabs+", /^-ggdb\d?/,
-      /^-march=.+/, /^-mtune=.+/, /^-mcpu=.+/,
-      /^-O[0-9zs]?$/, "-fast", "-no-cpp-precomp",
-      "-pedantic", "-pedantic-errors", "-Wno-long-double",
+      /^-mtune=.+/, /^-mcpu=.+/, /^-O[0-9zs]?$/,
+      "-fast", "-no-cpp-precomp", "-pedantic",
+      "-pedantic-errors", "-Wno-long-double",
       "-Wno-unused-but-set-variable"
+    when /^-march=.+/
+      args << arg if runtime_cpu_detection?
     when "-fopenmp", "-lgomp", "-mno-fused-madd", "-fforce-addr", "-fno-defer-pop",
       "-mno-dynamic-no-pic", "-fearly-inlining", /^-f(?:no-)?inline-functions-called-once/,
       /^-finline-limit/, /^-f(?:no-)?check-new/, "-fno-delete-null-pointer-checks",
@@ -212,13 +218,24 @@ class Cmd
       args << "-Wl,-multiply_defined,suppress"
     when "-undefineddynamic_lookup"
       args << "-Wl,-undefined,dynamic_lookup"
-    when /^-isysroot/, /^--sysroot/
+    when /^-isysroot=/, /^--sysroot=/
       if mac?
-        sdk = enum.next
+        sdk = arg.split("=")[1..-1].join("=")
+        # We set the sysroot for macOS SDKs
+        args << arg unless sdk.downcase.include? "osx"
+      else
+        args << arg
+      end
+    when /^-isysroot(.+)?/, /^--sysroot(.+)?/
+      # Support both "-isysrootfoo" and "-isysroot foo" (two arguments)
+      sdk = chuzzle(Regexp.last_match(1))
+      if mac?
+        sdk ||= enum.next
         # We set the sysroot for macOS SDKs
         args << "-isysroot#{sdk}" unless sdk.downcase.include? "osx"
       else
-        args << arg << enum.next
+        args << arg
+        args << enum.next unless sdk
       end
     when "-dylib"
       args << "-Wl,#{arg}"
@@ -272,7 +289,7 @@ class Cmd
     args << "-pipe"
     args << "-w" unless configure?
     args << "-#{ENV["HOMEBREW_OPTIMIZATION_LEVEL"]}"
-    args.concat(optflags)
+    args.concat(optflags) unless runtime_cpu_detection?
     args.concat(archflags)
     args << "-std=#{@arg0}" if /c[89]9/.match?(@arg0)
     args
@@ -372,6 +389,10 @@ class Cmd
 
   def permit_arch_flags?
     config.include?("K")
+  end
+
+  def runtime_cpu_detection?
+    config.include?("d")
   end
 
   def no_weak_imports?

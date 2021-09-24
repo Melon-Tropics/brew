@@ -5,21 +5,15 @@
 The supported method of installing specific versions of
 some formulae is to see if there is a versioned formula (e.g. `gcc@7`) available. If the version you’re looking for isn’t available, consider using `brew extract`.
 
-## Quickly remove something from `/usr/local`
+## Quickly remove something from Homebrew's prefix
 
 ```sh
 brew unlink <formula>
 ```
 
-This can be useful if a package can't build against the version of something you have linked into `/usr/local`.
+This can be useful if a package can't build against the version of something you have linked into Homebrew's prefix.
 
 And of course, you can simply `brew link <formula>` again afterwards!
-
-## Install into Homebrew without formulae
-
-```sh
-./configure --prefix=/usr/local/Cellar/foo/1.2 && make && make install && brew link foo
-```
 
 ## Pre-downloading a file for a formula
 Sometimes it's faster to download a file via means other than those
@@ -34,14 +28,14 @@ In the case of Erlang, this requires renaming the file from `otp_src_R13B03` to
 
 `brew --cache -s erlang` will print the correct name of the cached
 download. This means instead of manually renaming a formula, you can
-run `mv the_tarball $(brew --cache -s <formula>)`.
+run `mv the_tarball "$(brew --cache -s <formula>)"`.
 
 You can also pre-cache the download by using the command `brew fetch <formula>` which also displays the SHA-256 hash. This can be useful for updating formulae to new versions.
 
 ## Installing stuff without the Xcode CLT
 
 ```sh
-brew sh          # or: eval $(brew --env)
+brew sh          # or: eval "$(brew --env)"
 gem install ronn # or c-programs
 ```
 

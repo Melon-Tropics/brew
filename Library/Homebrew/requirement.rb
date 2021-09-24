@@ -15,6 +15,7 @@ class Requirement
   extend T::Sig
 
   include Dependable
+  extend Cachable
 
   attr_reader :tags, :name, :cask, :download
 
@@ -141,8 +142,8 @@ class Requirement
 
   def infer_name
     klass = self.class.name || self.class.to_s
-    klass.sub!(/(Dependency|Requirement)$/, "")
-    klass.sub!(/^(\w+::)*/, "")
+    klass = klass.sub(/(Dependency|Requirement)$/, "")
+                 .sub(/^(\w+::)*/, "")
     return klass.downcase if klass.present?
 
     return @cask if @cask.present?
@@ -219,7 +220,12 @@ class Requirement
     # the list.
     # The default filter, which is applied when a block is not given, omits
     # optionals and recommendeds based on what the dependent has asked for.
-    def expand(dependent, &block)
+    def expand(dependent, cache_key: nil, &block)
+      if cache_key.present?
+        cache[cache_key] ||= {}
+        return cache[cache_key][cache_id dependent].dup if cache[cache_key][cache_id dependent]
+      end
+
       reqs = Requirements.new
 
       formulae = dependent.recursive_dependencies.map(&:to_formula)
@@ -233,6 +239,7 @@ class Requirement
         end
       end
 
+      cache[cache_key][cache_id dependent] = reqs.dup if cache_key.present?
       reqs
     end
 
@@ -250,6 +257,12 @@ class Requirement
     sig { void }
     def prune
       throw(:prune, true)
+    end
+
+    private
+
+    def cache_id(dependent)
+      "#{dependent.full_name}_#{dependent.class}"
     end
   end
 end

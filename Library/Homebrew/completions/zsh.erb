@@ -9,7 +9,7 @@
 #     compare with already documented commands.
 # - For other changes: Edit this file.
 #
-# When done, regenerate the completions by running `brew man`.
+# When done, regenerate the completions by running `brew generate-man-completions`.
 %>
 #compdef brew
 #autoload
@@ -44,7 +44,7 @@ __brew_completion_caching_policy() {
   (( $#tmp )) || return 0
 
   # otherwise, invalidate if latest tap index file is missing or newer than cache file
-  tmp=( ${HOMEBREW_REPOSITORY:-/usr/local/Homebrew}/Library/Taps/*/*/.git/index(om[1]N) )
+  tmp=( $(brew --repository)/Library/Taps/*/*/.git/index(om[1]N) )
   [[ -z $tmp || $tmp -nt $1 ]]
 }
 
@@ -84,7 +84,7 @@ __brew_casks() {
   local comp_cachename=brew_casks
 
   if ! _retrieve_cache $comp_cachename; then
-    list=( $(brew search --cask) )
+    list=( $(brew casks) )
     _store_cache $comp_cachename list
   fi
 

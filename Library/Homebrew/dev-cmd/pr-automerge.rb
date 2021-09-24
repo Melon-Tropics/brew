@@ -21,7 +21,8 @@ module Homebrew
              description: "Pull requests must have this label."
       comma_array "--without-labels",
                   description: "Pull requests must not have these labels (default: "\
-                               "`do not merge`, `new formula`, `automerge-skip`, `linux-only`)."
+                               "`do not merge`, `new formula`, `automerge-skip`, "\
+                               "`linux to homebrew-core`)."
       switch "--without-approval",
              description: "Pull requests do not require approval to be merged."
       switch "--publish",
@@ -29,6 +30,9 @@ module Homebrew
       switch "--autosquash",
              description: "Instruct `brew pr-publish` to automatically reformat and reword commits "\
                           "in the pull request to our preferred format."
+      switch "--no-autosquash",
+             description: "Instruct `brew pr-publish` to skip automatically reformatting and rewording commits "\
+                          "in the pull request to the preferred format."
       switch "--ignore-failures",
              description: "Include pull requests that have failing status checks."
 
@@ -39,7 +43,14 @@ module Homebrew
   def pr_automerge
     args = pr_automerge_args.parse
 
-    without_labels = args.without_labels || ["do not merge", "new formula", "automerge-skip", "linux-only"]
+    odeprecated "`brew pr-automerge --autosquash`", "`brew pr-automerge`" if args.autosquash?
+
+    without_labels = args.without_labels || [
+      "do not merge",
+      "new formula",
+      "automerge-skip",
+      "linux to homebrew-core",
+    ]
     tap = Tap.fetch(args.tap || CoreTap.instance.name)
 
     query = "is:pr is:open repo:#{tap.full_name} draft:false"
@@ -64,7 +75,7 @@ module Homebrew
 
     publish_args = ["pr-publish"]
     publish_args << "--tap=#{tap}" if tap
-    publish_args << "--autosquash" if args.autosquash?
+    publish_args << "--no-autosquash" if args.no_autosquash?
     if args.publish?
       safe_system HOMEBREW_BREW_FILE, *publish_args, *pr_urls
     else

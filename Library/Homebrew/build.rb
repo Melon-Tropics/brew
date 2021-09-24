@@ -6,9 +6,8 @@
 
 old_trap = trap("INT") { exit! 130 }
 
-require "global"
+require_relative "global"
 require "build_options"
-require "cxxstdlib"
 require "keg"
 require "extend/ENV"
 require "debrew"
@@ -27,7 +26,7 @@ class Build
     @formula.build = BuildOptions.new(options, formula.options)
     @args = args
 
-    if args.ignore_deps?
+    if args.ignore_dependencies?
       @deps = []
       @reqs = []
     else
@@ -145,6 +144,9 @@ class Build
         # which is not known until after the formula has been staged.
         ENV["HOMEBREW_FORMULA_PREFIX"] = formula.prefix
 
+        # https://reproducible-builds.org/docs/source-date-epoch/
+        ENV["SOURCE_DATE_EPOCH"] = formula.source_modified_time.to_i.to_s
+
         formula.patch
 
         if args.git?
@@ -169,12 +171,13 @@ class Build
           interactive_shell(formula)
         else
           formula.prefix.mkpath
+          formula.logs.mkpath
 
           (formula.logs/"00.options.out").write \
             "#{formula.full_name} #{formula.build.used_options.sort.join(" ")}".strip
           formula.install
 
-          stdlibs = detect_stdlibs(ENV.compiler)
+          stdlibs = detect_stdlibs
           tab = Tab.create(formula, ENV.compiler, stdlibs.first)
           tab.write
 
@@ -186,9 +189,8 @@ class Build
     end
   end
 
-  def detect_stdlibs(compiler)
+  def detect_stdlibs
     keg = Keg.new(formula.prefix)
-    CxxStdlib.check_compatibility(formula, deps, keg, compiler)
 
     # The stdlib recorded in the install receipt is used during dependency
     # compatibility checks, so we only care about the stdlib that libraries
@@ -240,7 +242,14 @@ rescue Exception => e # rubocop:disable Lint/RescueException
     error_hash["env"] = e.env
   when "ErrorDuringExecution"
     error_hash["cmd"] = e.cmd
-    error_hash["status"] = e.status.exitstatus
+    error_hash["status"] = if e.status.is_a?(Process::Status)
+      {
+        exitstatus: e.status.exitstatus,
+        termsig:    e.status.termsig,
+      }
+    else
+      e.status
+    end
     error_hash["output"] = e.output
   end
 

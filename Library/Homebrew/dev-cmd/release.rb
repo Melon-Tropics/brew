@@ -39,7 +39,7 @@ module Homebrew
 
     begin
       latest_release = GitHub.get_latest_release "Homebrew", "brew"
-    rescue GitHub::HTTPNotFoundError
+    rescue GitHub::API::HTTPNotFoundError
       odie "No existing releases found!"
     end
     latest_version = Version.new latest_release["tag_name"]
@@ -48,7 +48,7 @@ module Homebrew
       one_month_ago = Date.today << 1
       latest_major_minor_release = begin
         GitHub.get_release "Homebrew", "brew", "#{latest_version.major_minor}.0"
-      rescue GitHub::HTTPNotFoundError
+      rescue GitHub::API::HTTPNotFoundError
         nil
       end
 
@@ -71,7 +71,7 @@ module Homebrew
       latest_major_minor_version = "#{latest_version.major}.#{latest_version.minor.to_i}.0"
       ohai "Release notes since #{latest_major_minor_version} for #{new_version} blog post:"
       # release notes without username suffix or dependabot bumps
-      puts ReleaseNotes.generate_release_notes(latest_major_minor_version, "origin/HEAD", markdown: true)
+      puts ReleaseNotes.generate_release_notes(latest_major_minor_version, "origin/HEAD")
                        .lines
                        .reject { |l| l.include?(" (@Homebrew)") }
                        .map { |l| l.gsub(/ \(@[\w-]+\)$/, "") }
@@ -85,11 +85,11 @@ module Homebrew
     else
       ""
     end
-    release_notes += ReleaseNotes.generate_release_notes latest_version, "origin/HEAD", markdown: true
+    release_notes += ReleaseNotes.generate_release_notes latest_version, "origin/HEAD"
 
     begin
       release = GitHub.create_or_update_release "Homebrew", "brew", new_version, body: release_notes, draft: true
-    rescue *GitHub::API_ERRORS => e
+    rescue *GitHub::API::ERRORS => e
       odie "Unable to create release: #{e.message}!"
     end
 

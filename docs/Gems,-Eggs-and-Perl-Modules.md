@@ -23,7 +23,7 @@ is probably safer than changing the group ownership of the directory.
 Habit maybe?
 
 One reason is executables go in `/usr/local/bin`. Usually this isn’t a
-writable location. But if you installed Homebrew as we recommend,
+writable location. But if you installed Homebrew as we recommend on macOS Intel,
 `/usr/local` will be writable without sudo. So now you are good to
 install the development tools you need without risking the use of sudo.
 
@@ -118,7 +118,7 @@ Then put the appropriate incantation in your shell’s startup, e.g. for
 [`local::lib`](https://metacpan.org/pod/local::lib) docs.
 
 ```sh
-eval $(perl -I$HOME/perl5/lib/perl5 -Mlocal::lib)
+eval "$(perl -I$HOME/perl5/lib/perl5 -Mlocal::lib)"
 ```
 
 Now (after you restart your shell) `cpan` or `perl -MCPAN -eshell` etc.

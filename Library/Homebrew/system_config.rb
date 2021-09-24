@@ -32,19 +32,24 @@ module SystemConfig
       end
     end
 
+    sig { returns(Pathname) }
+    def homebrew_repo
+      HOMEBREW_REPOSITORY.dup.extend(GitRepositoryExtension)
+    end
+
     sig { returns(String) }
     def head
-      HOMEBREW_REPOSITORY.git_head || "(none)"
+      homebrew_repo.git_head || "(none)"
     end
 
     sig { returns(String) }
     def last_commit
-      HOMEBREW_REPOSITORY.git_last_commit || "never"
+      homebrew_repo.git_last_commit || "never"
     end
 
     sig { returns(String) }
     def origin
-      HOMEBREW_REPOSITORY.git_origin || "(none)"
+      homebrew_repo.git_origin || "(none)"
     end
 
     sig { returns(String) }
@@ -114,16 +119,6 @@ module SystemConfig
     end
 
     sig { returns(String) }
-    def describe_java
-      return "N/A" unless which "java"
-
-      _, err, status = system_command("java", args: ["-version"], print_stderr: false)
-      return "N/A" unless status.success?
-
-      err[/java version "([\d._]+)"/, 1] || "N/A"
-    end
-
-    sig { returns(String) }
     def describe_git
       return "N/A" unless Utils::Git.available?
 
@@ -132,7 +127,7 @@ module SystemConfig
 
     sig { returns(String) }
     def describe_curl
-      out, = system_command(curl_executable, args: ["--version"])
+      out, = system_command(curl_executable, args: ["--version"], verbose: false)
 
       if /^curl (?<curl_version>[\d.]+)/ =~ out
         "#{curl_version} => #{curl_executable}"
@@ -194,7 +189,6 @@ module SystemConfig
       f.puts "Clang: #{describe_clang}"
       f.puts "Git: #{describe_git}"
       f.puts "Curl: #{describe_curl}"
-      f.puts "Java: #{describe_java}" if describe_java != "N/A"
     end
 
     def dump_verbose_config(f = $stdout)

@@ -54,8 +54,8 @@ Homebrew doesn't support arbitrary mixing and matching of formula versions, so e
 
 Which is usually: `~/Library/Caches/Homebrew`
 
-## My Mac `.app`s don’t find `/usr/local/bin` utilities!
-GUI apps on macOS don’t have `/usr/local/bin` in their `PATH` by default. If you're on Mountain Lion or later, you can fix this by running `sudo launchctl config user path "/usr/local/bin:$PATH"` and then rebooting, as documented in `man launchctl`. Note that this sets the launchctl `PATH` for *all users*. For earlier versions of macOS, see [this page](https://developer.apple.com/legacy/library/qa/qa1067/_index.html).
+## My Mac `.app`s don’t find Homebrew utilities!
+GUI apps on macOS don’t have Homebrew's prefix in their `PATH` by default. If you're on Mountain Lion or later, you can fix this by running `sudo launchctl config user path "$(brew --prefix)/bin:${PATH}"` and then rebooting, as documented in `man launchctl`. Note that this sets the launchctl `PATH` for *all users*. For earlier versions of macOS, see [this page](https://developer.apple.com/legacy/library/qa/qa1067/_index.html).
 
 ## How do I contribute to Homebrew?
 Read our [contribution guidelines](https://github.com/Homebrew/brew/blob/HEAD/CONTRIBUTING.md#contributing-to-homebrew).
@@ -63,7 +63,7 @@ Read our [contribution guidelines](https://github.com/Homebrew/brew/blob/HEAD/CO
 ## Why do you compile everything?
 Homebrew provides pre-compiled versions for many formulae. These
 pre-compiled versions are referred to as [bottles](Bottles.md) and are available
-at <https://bintray.com/homebrew/bottles>.
+at <https://github.com/Homebrew/homebrew-core/packages>.
 
 If available, bottled binaries will be used by default except under the
 following conditions:
@@ -74,8 +74,8 @@ will use a bottled version of the formula, but
 * The `--build-from-source` option is invoked.
 * The machine is not running a supported version of macOS as all
 bottled builds are generated only for supported macOS versions.
-* Homebrew is installed to a prefix other than the standard
-`/usr/local` (although some bottles support this).
+* Homebrew is installed to a prefix other than the default
+(although some bottles support this).
 
 We aim to bottle everything.
 
@@ -84,30 +84,17 @@ We aim to bottle everything.
 ```sh
 brew install hub
 brew update
-cd $(brew --repository)
+cd "$(brew --repository)"
 hub pull someone_else
 ```
 
 ## Why should I install Homebrew in the default location?
 
-Homebrew's pre-built binary packages (known as [bottles](Bottles.md)) of many packages can only be used if you install in the default installation prefix, otherwise they have to be built from source. Building from source takes a long time, is prone to fail, and is not supported. Do yourself a favour and install to the default prefix so that you can use our pre-built binary packages. The default prefix is `/usr/local` for macOS on Intel, `/opt/homebrew` for macOS on ARM, and `/home/linuxbrew/.linuxbrew` for Linux. *Pick another prefix at your peril!*
+Homebrew's pre-built binary packages (known as [bottles](Bottles.md)) of many packages can only be used if you install in the default installation prefix, otherwise they have to be built from source. Building from source takes a long time, is prone to fail, and is not supported. Do yourself a favour and install to the default prefix so that you can use our pre-built binary packages. The default prefix is `/usr/local` for macOS on Intel, `/opt/homebrew` for macOS on Apple Silicon/ARM, and `/home/linuxbrew/.linuxbrew` for Linux. *Pick another prefix at your peril!*
 
-## Why does Homebrew prefer I install to `/usr/local`?
+## Why is the default installation prefix `/opt/homebrew` on Apple Silicon?
 
-1.  **It’s easier**<br>`/usr/local/bin` is already in your
-    `PATH`.
-2.  **It’s easier**<br>Tons of build scripts break if their dependencies
-    aren’t in either `/usr` or `/usr/local`. We
-    fix this for Homebrew formulae (although we don’t always test for
-    it), but you’ll find that many RubyGems and Python setup scripts
-    break which is something outside our control.
-3.  **It’s safe**<br>Apple has assigned this directory for non-system utilities. This means
-    there are no files in `/usr/local` by default, so there
-    is no need to worry about messing up existing or system tools.
-
-**If you plan to install gems that depend on formulae then save yourself a bunch of hassle and install to `/usr/local`!**
-
-It is not always straightforward to tell `gem` to look in non-standard directories for headers and libraries. If you choose `/usr/local`, many things will "just work".
+The prefix `/opt/homebrew` was chosen to allow installations in `/opt/homebrew` for Apple Silicon and `/usr/local` for Rosetta 2 to coexist and use bottles.
 
 ## Why is the default installation prefix `/home/linuxbrew/.linuxbrew` on Linux?
 
@@ -154,29 +141,6 @@ into a debugging shell.
 If you want your new formula to be part of `homebrew/core` or want
 to learn more about writing formulae, then please read the [Formula Cookbook](Formula-Cookbook.md).
 
-## Can I install my own stuff to `/usr/local`?
-Yes, `brew` is designed to not get in your way so you can use it how you
-like.
-
-Install your own stuff, but be aware that if you install common
-libraries like libexpat yourself, it may cause trouble when trying to
-build certain Homebrew formula. As a result `brew doctor` will warn you
-about this.
-
-Thus it’s probably better to install your own stuff to the Cellar and
-then `brew link` it. Like so:
-
-```sh
-$ cd foo-0.1
-$ brew diy
-./configure --prefix=/usr/local/Cellar/foo/0.1
-$ ./configure --prefix=/usr/local/Cellar/foo/0.1
-[snip]
-$ make && make install
-$ brew link foo
-Linking /usr/local/Cellar/foo/0.1… 17 symlinks created
-```
-
 ## Why was a formula deleted or disabled?
 Use `brew log <formula>` to find out! Likely because it had [unresolved issues](Acceptable-Formulae.md) and/or [our analytics](Analytics.md) identified it was not widely used.
 
@@ -186,10 +150,58 @@ For disabled and deprecated formulae, running `brew info <formula>` will also pr
 Homebrew's creator @mxcl was too concerned with the beer theme and didn't consider that the project may actually prove popular. By the time Max realised that it was popular, it was too late. However, today, the first Google hit for "homebrew" is not beer related 😉
 
 ## What does "keg-only" mean?
-It means the formula is installed only into the Cellar and is not linked into `/usr/local`. This means most tools will not find it. You can see why a formula was installed as keg-only, and instructions to include it in your `PATH`, by running `brew info <formula>`.
+It means the formula is installed only into the Cellar and is not linked into the default prefix. This means most tools will not find it. You can see why a formula was installed as keg-only, and instructions to include it in your `PATH`, by running `brew info <formula>`.
 
 You can still link in the formula if you need to with `brew link <formula>`, though this can cause unexpected behaviour if you are shadowing macOS software.
 
 ## How can I specify different configure arguments for a formula?
 `brew edit <formula>` and edit the formula. Currently there is no
 other way to do this.
+
+
+## The app can’t be opened because it is from an unidentified developer
+Chances are that certain apps will give you a popup message like this:
+
+<img src="https://i.imgur.com/CnEEATG.png" width="532" alt="Gatekeeper message">
+
+This is a [security feature from Apple](https://support.apple.com/en-us/HT202491). The single most important thing to know is that **you can allow individual apps to be exempt from that feature.** This allows the app to run while the rest of the system remains under protection.
+
+**Always leave system-wide protection enabled,** and disable it only for specific apps as needed.
+
+If you are sure you want to trust the app, you can disable protection for that app by right-clicking its icon and choosing `Open`:
+
+<img src="https://i.imgur.com/69xc2WK.png" width="312" alt="Right-click the app and choose Open">
+
+Finally, click the `Open` button if you want macOS to permanently allow the app to run on this Mac. **Don’t do this unless you’re sure you trust the app.**
+
+<img src="https://i.imgur.com/xppa4Qv.png" width="532" alt="Gatekeeper message">
+
+Alternatively, you may provide the [`--no-quarantine` flag](https://github.com/Homebrew/homebrew-cask/blob/HEAD/USAGE.md#options) at install time to not add this feature to a specific app.
+
+
+## Why some apps aren’t included in `upgrade`
+After running `brew upgrade`, you may notice some casks you think should be upgrading, aren’t.
+
+As you’re likely aware, a lot of macOS software can upgrade itself:
+
+<img src="https://upload.wikimedia.org/wikipedia/commons/c/c0/Sparkle_Test_App_Software_Update.png" width="532" alt="Sparkle update window">
+
+That could cause conflicts when used in tandem with Homebrew Cask’s `upgrade` mechanism.
+
+If you upgrade software through it’s built-in mechanism, that happens without Homebrew Cask’s knowledge so both versions get out of sync. If you then upgraded through Homebrew Cask and we have a lower version on the software on record, you’d get a downgrade.
+
+There are a few ideas to fix this problem:
+
+* Try to prevent the software’s automated updates. That won’t be a universal solution and may cause it to break. Most software on Homebrew Cask is closed-source, so we’d be guessing. This is also why pinning casks to a version isn’t available.
+* Try to extract the installed software’s version and compare it to the cask, deciding what to do at that time. That’s a complicated solution that breaks other parts of our methodology, such as using versions to interpolate in `url`s (a definite win for maintainability). That solution also isn’t universal, as many software developers are inconsistent in their versioning schemes (and app bundles are meant to have two version strings) and it doesn’t work for all types of software we support.
+
+So we let software be. Installing it with Homebrew Cask should make it behave the same as if you had installed it manually. But we also want to support software that does not auto-upgrade, so we add [`auto_updates true`](https://github.com/Homebrew/homebrew-cask/blob/62c0495b254845a481dacac6ea7c8005e27a3fb0/Casks/alfred.rb#L10) to casks of software that can do it, which excludes them from `brew upgrade`.
+
+Casks which use [`version :latest`](https://docs.brew.sh/Cask-Cookbook#version-latest) are also excluded, because we have no way to track the version they’re in. It helps to ask the developers of such software to provide versioned releases (i.e. have the version in the path of the download `url`).
+
+If you still want to force software to be upgraded via Homebrew Cask, you can:
+
+* Reference it specifically in the `upgrade` command: `brew upgrade {{cask_name}}`.
+* Use the `--greedy` flag: `brew upgrade --greedy`.
+
+Refer to the `upgrade` section of the `brew` manual page by running `man -P 'less --pattern "^ {3}upgrade"' brew`.

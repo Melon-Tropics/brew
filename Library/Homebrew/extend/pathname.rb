@@ -1,6 +1,7 @@
 # typed: true
 # frozen_string_literal: true
 
+require "context"
 require "resource"
 require "metafiles"
 
@@ -80,9 +81,6 @@ class Pathname
   extend T::Sig
 
   include DiskUsageExtension
-
-  # @private
-  BOTTLE_EXTNAME_RX = /(\.[a-z0-9_]+\.bottle\.(\d+\.)?tar\.gz)$/.freeze
 
   # Moves a file from the original location to the {Pathname}'s.
   sig {
@@ -167,19 +165,6 @@ class Pathname
   end
   private :install_symlink_p
 
-  # @private
-  alias old_write write
-
-  # We assume this pathname object is a file, obviously.
-  sig { params(content: String, offset: Integer, open_args: T::Hash[Symbol, T.untyped]).returns(Integer) }
-  def write(content, offset = 0, open_args = {})
-    raise "Will not overwrite #{self}" if exist?
-
-    dirname.mkpath
-
-    old_write(content, offset, open_args)
-  end
-
   # Only appends to a file that is already created.
   sig { params(content: String, open_args: T.untyped).void }
   def append_lines(content, **open_args)
@@ -243,10 +228,10 @@ class Pathname
   def extname
     basename = File.basename(self)
 
-    bottle_ext = basename[BOTTLE_EXTNAME_RX, 1]
+    bottle_ext, = HOMEBREW_BOTTLES_EXTNAME_REGEX.match(basename).to_a
     return bottle_ext if bottle_ext
 
-    archive_ext = basename[/(\.(tar|cpio|pax)\.(gz|bz2|lz|xz|Z))\Z/, 1]
+    archive_ext = basename[/(\.(tar|cpio|pax)\.(gz|bz2|lz|xz|zst|Z))\Z/, 1]
     return archive_ext if archive_ext
 
     # Don't treat version numbers as extname.
@@ -276,7 +261,7 @@ class Pathname
     else
       false
     end
-  rescue Errno::EACCES, Errno::ENOENT, Errno::EBUSY
+  rescue Errno::EACCES, Errno::ENOENT, Errno::EBUSY, Errno::EPERM
     false
   end
 
@@ -422,6 +407,7 @@ class Pathname
     ).returns(Integer)
   }
   def write_jar_script(target_jar, script_name, java_opts = "", java_version: nil)
+    mkpath
     (self/script_name).write <<~EOS
       #!/bin/bash
       export JAVA_HOME="#{Language::Java.overridable_java_home_env(java_version)[:JAVA_HOME]}"
@@ -432,6 +418,7 @@ class Pathname
   def install_metafiles(from = Pathname.pwd)
     Pathname(from).children.each do |p|
       next if p.directory?
+      next if File.zero?(p)
       next unless Metafiles.copy?(p.basename.to_s)
 
       # Some software symlinks these files (see help2man.rb)

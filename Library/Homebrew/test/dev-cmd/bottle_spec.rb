@@ -108,7 +108,6 @@ describe "brew bottle" do
       }.to output(<<~EOS).to_stdout
         ==> testball
           bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
             sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
             sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
             sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
@@ -123,80 +122,12 @@ describe "brew bottle" do
           sha256 "#{tarball.sha256}"
 
           bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
             sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
             sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
             sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
           end
 
           option "with-foo", "Build with foo"
-
-          def install
-            (prefix/"foo"/"test").write("test") if build.with? "foo"
-            prefix.install Dir["*"]
-            (buildpath/"test.c").write \
-            "#include <stdio.h>\\nint main(){printf(\\"test\\");return 0;}"
-            bin.mkpath
-            system ENV.cc, "test.c", "-o", bin/"test"
-          end
-
-
-
-          # something here
-
-        end
-      EOS
-    end
-
-    it "replaces the bottle block in a formula that already has a bottle block in the old format" do
-      core_tap.path.cd do
-        system "git", "init"
-        setup_test_formula "testball", bottle_block: <<~EOS
-
-          bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
-            cellar :any_skip_relocation
-            sha256 "6b276491297d4052538bd2fd22d5129389f27d90a98f831987236a5b90511b98" => :big_sur
-            sha256 "c3c650d75f5188f5d6edd351dd3215e141b73b8ec1cf9144f30e39cbc45de72e" => :arm64_big_sur
-            sha256 "16cf230afdfcb6306c208d169549cf8773c831c8653d2c852315a048960d7e72" => :catalina
-          end
-        EOS
-        system "git", "add", "--all"
-        system "git", "commit", "-m", "testball 0.1"
-      end
-
-      expect {
-        brew "bottle",
-             "--merge",
-             "--write",
-             "#{TEST_TMPDIR}/testball-1.0.arm64_big_sur.bottle.json",
-             "#{TEST_TMPDIR}/testball-1.0.big_sur.bottle.json",
-             "#{TEST_TMPDIR}/testball-1.0.catalina.bottle.json"
-      }.to output(<<~EOS).to_stdout
-        ==> testball
-          bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
-            sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
-            sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
-            sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
-          end
-      EOS
-
-      expect((core_tap.path/"Formula/testball.rb").read).to eq <<~EOS
-        class Testball < Formula
-          desc "Some test"
-          homepage "https://brew.sh/testball"
-          url "file://#{tarball}"
-          sha256 "#{tarball.sha256}"
-
-          option "with-foo", "Build with foo"
-
-          bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
-            sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
-            sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
-            sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
-          end
 
           def install
             (prefix/"foo"/"test").write("test") if build.with? "foo"
@@ -221,7 +152,6 @@ describe "brew bottle" do
         setup_test_formula "testball", bottle_block: <<~EOS
 
           bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
             sha256 cellar: :any_skip_relocation, arm64_big_sur: "c3c650d75f5188f5d6edd351dd3215e141b73b8ec1cf9144f30e39cbc45de72e"
             sha256 cellar: :any_skip_relocation, big_sur:       "6b276491297d4052538bd2fd22d5129389f27d90a98f831987236a5b90511b98"
             sha256 cellar: :any_skip_relocation, catalina:      "16cf230afdfcb6306c208d169549cf8773c831c8653d2c852315a048960d7e72"
@@ -241,7 +171,6 @@ describe "brew bottle" do
       }.to output(<<~EOS).to_stdout
         ==> testball
           bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
             sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
             sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
             sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
@@ -258,97 +187,9 @@ describe "brew bottle" do
           option "with-foo", "Build with foo"
 
           bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
             sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
             sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
             sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
-          end
-
-          def install
-            (prefix/"foo"/"test").write("test") if build.with? "foo"
-            prefix.install Dir["*"]
-            (buildpath/"test.c").write \
-            "#include <stdio.h>\\nint main(){printf(\\"test\\");return 0;}"
-            bin.mkpath
-            system ENV.cc, "test.c", "-o", bin/"test"
-          end
-
-
-
-          # something here
-
-        end
-      EOS
-    end
-
-    it "fails to add the bottle block to a formula that has no bottle block when using --keep-old" do
-      core_tap.path.cd do
-        system "git", "init"
-        setup_test_formula("testball")
-        system "git", "add", "--all"
-        system "git", "commit", "-m", "testball 0.1"
-      end
-
-      expect {
-        brew "bottle",
-             "--merge",
-             "--write",
-             "--keep-old",
-             "#{TEST_TMPDIR}/testball-1.0.arm64_big_sur.bottle.json",
-             "#{TEST_TMPDIR}/testball-1.0.big_sur.bottle.json",
-             "#{TEST_TMPDIR}/testball-1.0.catalina.bottle.json"
-      }.to output("Error: `--keep-old` was passed but there was no existing bottle block!\n").to_stderr
-    end
-
-    it "updates the bottle block in a formula that already has a bottle block (old format) when using --keep-old" do
-      core_tap.path.cd do
-        system "git", "init"
-        setup_test_formula "testball", bottle_block: <<~EOS
-
-          bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
-            cellar :any
-            sha256 "6971b6eebf4c00eaaed72a1104a49be63861eabc95d679a0c84040398e320059" => :high_sierra
-          end
-        EOS
-        system "git", "add", "--all"
-        system "git", "commit", "-m", "testball 0.1"
-      end
-
-      expect {
-        brew "bottle",
-             "--merge",
-             "--write",
-             "--keep-old",
-             "#{TEST_TMPDIR}/testball-1.0.arm64_big_sur.bottle.json",
-             "#{TEST_TMPDIR}/testball-1.0.big_sur.bottle.json",
-             "#{TEST_TMPDIR}/testball-1.0.catalina.bottle.json"
-      }.to output(<<~EOS).to_stdout
-        ==> testball
-          bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
-            sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
-            sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
-            sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
-            sha256 cellar: :any,                 high_sierra:   "6971b6eebf4c00eaaed72a1104a49be63861eabc95d679a0c84040398e320059"
-          end
-      EOS
-
-      expect((core_tap.path/"Formula/testball.rb").read).to eq <<~EOS
-        class Testball < Formula
-          desc "Some test"
-          homepage "https://brew.sh/testball"
-          url "file://#{tarball}"
-          sha256 "#{tarball.sha256}"
-
-          option "with-foo", "Build with foo"
-
-          bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
-            sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
-            sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
-            sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
-            sha256 cellar: :any,                 high_sierra:   "6971b6eebf4c00eaaed72a1104a49be63861eabc95d679a0c84040398e320059"
           end
 
           def install
@@ -374,7 +215,6 @@ describe "brew bottle" do
         setup_test_formula "testball", bottle_block: <<~EOS
 
           bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
             sha256 cellar: :any, high_sierra: "6971b6eebf4c00eaaed72a1104a49be63861eabc95d679a0c84040398e320059"
           end
         EOS
@@ -393,7 +233,6 @@ describe "brew bottle" do
       }.to output(<<~EOS).to_stdout
         ==> testball
           bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
             sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
             sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
             sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
@@ -411,7 +250,6 @@ describe "brew bottle" do
           option "with-foo", "Build with foo"
 
           bottle do
-            root_url "#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}"
             sha256 cellar: :any_skip_relocation, arm64_big_sur: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
             sha256 cellar: :any_skip_relocation, big_sur:       "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f"
             sha256 cellar: :any_skip_relocation, catalina:      "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac"
@@ -507,44 +345,50 @@ describe "brew bottle" do
       end
     end
 
-    specify "::merge_json_files" do
-      bottles_hash = homebrew.merge_json_files(
-        [hello_hash_big_sur, hello_hash_catalina, unzip_hash_big_sur, unzip_hash_catalina],
-      )
+    describe "::merge_json_files" do
+      it "merges JSON files" do
+        bottles_hash = homebrew.merge_json_files(
+          [hello_hash_big_sur, hello_hash_catalina, unzip_hash_big_sur, unzip_hash_catalina],
+        )
 
-      hello_hash = bottles_hash["hello"]
-      expect(hello_hash["bottle"]["tags"]["big_sur"]["cellar"]).to eq("any_skip_relocation")
-      expect(hello_hash["bottle"]["tags"]["big_sur"]["filename"]).to eq("hello-1.0.big_sur.bottle.tar.gz")
-      expect(hello_hash["bottle"]["tags"]["big_sur"]["local_filename"]).to eq("hello--1.0.big_sur.bottle.tar.gz")
-      expect(hello_hash["bottle"]["tags"]["big_sur"]["sha256"]).to eq(
-        "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f",
-      )
-      expect(hello_hash["bottle"]["tags"]["catalina"]["cellar"]).to eq("any_skip_relocation")
-      expect(hello_hash["bottle"]["tags"]["catalina"]["filename"]).to eq("hello-1.0.catalina.bottle.tar.gz")
-      expect(hello_hash["bottle"]["tags"]["catalina"]["local_filename"]).to eq("hello--1.0.catalina.bottle.tar.gz")
-      expect(hello_hash["bottle"]["tags"]["catalina"]["sha256"]).to eq(
-        "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac",
-      )
-      unzip_hash = bottles_hash["unzip"]
-      expect(unzip_hash["bottle"]["tags"]["big_sur"]["cellar"]).to eq("any_skip_relocation")
-      expect(unzip_hash["bottle"]["tags"]["big_sur"]["filename"]).to eq("unzip-2.0.big_sur.bottle.tar.gz")
-      expect(unzip_hash["bottle"]["tags"]["big_sur"]["local_filename"]).to eq("unzip--2.0.big_sur.bottle.tar.gz")
-      expect(unzip_hash["bottle"]["tags"]["big_sur"]["sha256"]).to eq(
-        "16cf230afdfcb6306c208d169549cf8773c831c8653d2c852315a048960d7e72",
-      )
-      expect(unzip_hash["bottle"]["tags"]["catalina"]["cellar"]).to eq("any")
-      expect(unzip_hash["bottle"]["tags"]["catalina"]["filename"]).to eq("unzip-2.0.catalina.bottle.tar.gz")
-      expect(unzip_hash["bottle"]["tags"]["catalina"]["local_filename"]).to eq("unzip--2.0.catalina.bottle.tar.gz")
-      expect(unzip_hash["bottle"]["tags"]["catalina"]["sha256"]).to eq(
-        "d9cc50eec8ac243148a121049c236cba06af4a0b1156ab397d0a2850aa79c137",
-      )
+        hello_hash = bottles_hash["hello"]
+        expect(hello_hash["bottle"]["tags"]["big_sur"]["cellar"]).to eq("any_skip_relocation")
+        expect(hello_hash["bottle"]["tags"]["big_sur"]["filename"]).to eq("hello-1.0.big_sur.bottle.tar.gz")
+        expect(hello_hash["bottle"]["tags"]["big_sur"]["local_filename"]).to eq("hello--1.0.big_sur.bottle.tar.gz")
+        expect(hello_hash["bottle"]["tags"]["big_sur"]["sha256"]).to eq(
+          "a0af7dcbb5c83f6f3f7ecd507c2d352c1a018f894d51ad241ce8492fa598010f",
+        )
+        expect(hello_hash["bottle"]["tags"]["catalina"]["cellar"]).to eq("any_skip_relocation")
+        expect(hello_hash["bottle"]["tags"]["catalina"]["filename"]).to eq("hello-1.0.catalina.bottle.tar.gz")
+        expect(hello_hash["bottle"]["tags"]["catalina"]["local_filename"]).to eq("hello--1.0.catalina.bottle.tar.gz")
+        expect(hello_hash["bottle"]["tags"]["catalina"]["sha256"]).to eq(
+          "5334dd344986e46b2aa4f0471cac7b0914bd7de7cb890a34415771788d03f2ac",
+        )
+        unzip_hash = bottles_hash["unzip"]
+        expect(unzip_hash["bottle"]["tags"]["big_sur"]["cellar"]).to eq("any_skip_relocation")
+        expect(unzip_hash["bottle"]["tags"]["big_sur"]["filename"]).to eq("unzip-2.0.big_sur.bottle.tar.gz")
+        expect(unzip_hash["bottle"]["tags"]["big_sur"]["local_filename"]).to eq("unzip--2.0.big_sur.bottle.tar.gz")
+        expect(unzip_hash["bottle"]["tags"]["big_sur"]["sha256"]).to eq(
+          "16cf230afdfcb6306c208d169549cf8773c831c8653d2c852315a048960d7e72",
+        )
+        expect(unzip_hash["bottle"]["tags"]["catalina"]["cellar"]).to eq("any")
+        expect(unzip_hash["bottle"]["tags"]["catalina"]["filename"]).to eq("unzip-2.0.catalina.bottle.tar.gz")
+        expect(unzip_hash["bottle"]["tags"]["catalina"]["local_filename"]).to eq("unzip--2.0.catalina.bottle.tar.gz")
+        expect(unzip_hash["bottle"]["tags"]["catalina"]["sha256"]).to eq(
+          "d9cc50eec8ac243148a121049c236cba06af4a0b1156ab397d0a2850aa79c137",
+        )
+      end
+
+      # TODO: add deduplication tests e.g.
+      # it "deduplicates JSON files with matching macOS checksums"
+      # it "deduplicates JSON files with matching OS checksums" do
     end
 
     describe "#merge_bottle_spec" do
       it "allows new bottle hash to be empty" do
-        valid_keys = [:root_url, :prefix, :cellar, :rebuild, :sha256]
+        valid_keys = [:root_url, :cellar, :rebuild, :sha256]
         old_spec = BottleSpecification.new
-        old_spec.sha256("f59bc65c91e4e698f6f050e1efea0040f57372d4dcf0996cbb8f97ced320403b" => :big_sur)
+        old_spec.sha256(big_sur: "f59bc65c91e4e698f6f050e1efea0040f57372d4dcf0996cbb8f97ced320403b")
         expect { homebrew.merge_bottle_spec(valid_keys, old_spec, {}) }.not_to raise_error
       end
 
@@ -554,16 +398,6 @@ describe "brew bottle" do
         new_hash = { "root_url" => "https://testbrew.bintray.com/bottles" }
         expect(homebrew.merge_bottle_spec([:root_url], old_spec, new_hash)).to eq [
           ['root_url: old: "https://failbrew.bintray.com/bottles", new: "https://testbrew.bintray.com/bottles"'],
-          [],
-        ]
-      end
-
-      it "checks for conflicting prefix" do
-        old_spec = BottleSpecification.new
-        old_spec.prefix("/opt/failbrew")
-        new_hash = { "prefix" => "/opt/testbrew" }
-        expect(homebrew.merge_bottle_spec([:prefix], old_spec, new_hash)).to eq [
-          ['prefix: old: "/opt/failbrew", new: "/opt/testbrew"'],
           [],
         ]
       end
@@ -580,13 +414,15 @@ describe "brew bottle" do
 
       it "checks for conflicting checksums" do
         old_spec = BottleSpecification.new
-        old_spec.sha256(catalina: "109c0cb581a7b5d84da36d84b221fb9dd0f8a927b3044d82611791c9907e202e")
+        old_catalina_sha256 = "109c0cb581a7b5d84da36d84b221fb9dd0f8a927b3044d82611791c9907e202e"
+        old_spec.sha256(catalina: old_catalina_sha256)
         old_spec.sha256(mojave: "7571772bf7a0c9fe193e70e521318b53993bee6f351976c9b6e01e00d13d6c3f")
-        new_hash = { "tags" => { "catalina" => "ec6d7f08412468f28dee2be17ad8cd8b883b16b34329efcecce019b8c9736428" } }
+        new_catalina_sha256 = "ec6d7f08412468f28dee2be17ad8cd8b883b16b34329efcecce019b8c9736428"
+        new_hash = { "tags" => { "catalina" => { "sha256" => new_catalina_sha256 } } }
         expected_checksum_hash = { mojave: "7571772bf7a0c9fe193e70e521318b53993bee6f351976c9b6e01e00d13d6c3f" }
-        expected_checksum_hash[:cellar] = Homebrew::DEFAULT_CELLAR
+        expected_checksum_hash[:cellar] = Homebrew::DEFAULT_MACOS_CELLAR
         expect(homebrew.merge_bottle_spec([:sha256], old_spec, new_hash)).to eq [
-          ["sha256 => catalina"],
+          ["sha256 catalina: old: #{old_catalina_sha256.inspect}, new: #{new_catalina_sha256.inspect}"],
           [expected_checksum_hash],
         ]
       end
@@ -659,6 +495,39 @@ describe "brew bottle" do
         end
       end
     end
+
+    describe "::bottle_output" do
+      it "includes a custom root_url" do
+        bottle = BottleSpecification.new
+        bottle.root_url("https://example.com")
+        bottle.sha256(catalina: "109c0cb581a7b5d84da36d84b221fb9dd0f8a927b3044d82611791c9907e202e")
+
+        expect(homebrew.bottle_output(bottle, nil)).to eq(
+          <<~RUBY.indent(2),
+            bottle do
+              root_url "https://example.com"
+              sha256 catalina: "109c0cb581a7b5d84da36d84b221fb9dd0f8a927b3044d82611791c9907e202e"
+            end
+          RUBY
+        )
+      end
+
+      it "includes download strategy for custom root_url" do
+        bottle = BottleSpecification.new
+        bottle.root_url("https://example.com")
+        bottle.sha256(catalina: "109c0cb581a7b5d84da36d84b221fb9dd0f8a927b3044d82611791c9907e202e")
+
+        expect(homebrew.bottle_output(bottle, "ExampleStrategy")).to eq(
+          <<~RUBY.indent(2),
+            bottle do
+              root_url "https://example.com",
+                using: ExampleStrategy
+              sha256 catalina: "109c0cb581a7b5d84da36d84b221fb9dd0f8a927b3044d82611791c9907e202e"
+            end
+          RUBY
+        )
+      end
+    end
   end
 end
 
@@ -671,7 +540,7 @@ def stub_hash(parameters)
             "path":"#{parameters[:path]}"
          },
          "bottle":{
-            "root_url":"#{HOMEBREW_BOTTLE_DEFAULT_DOMAIN}",
+            "root_url":"#{parameters[:root_url] || HOMEBREW_BOTTLE_DEFAULT_DOMAIN}",
             "prefix":"/usr/local",
             "cellar":"#{parameters[:cellar]}",
             "rebuild":0,
@@ -682,10 +551,6 @@ def stub_hash(parameters)
                   "sha256":"#{parameters[:sha256]}"
                }
             }
-         },
-         "bintray":{
-            "package":"#{parameters[:name]}",
-            "repository":"bottles"
          }
       }
     }

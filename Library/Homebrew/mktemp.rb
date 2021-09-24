@@ -40,7 +40,7 @@ class Mktemp
   end
 
   def run
-    @tmpdir = Pathname.new(Dir.mktmpdir("#{@prefix.tr "@", "-"}-", HOMEBREW_TEMP))
+    @tmpdir = Pathname.new(Dir.mktmpdir("#{@prefix.tr "@", "AT"}-", HOMEBREW_TEMP))
 
     # Make sure files inside the temporary directory have the same group as the
     # brew instance.
@@ -62,9 +62,23 @@ class Mktemp
     begin
       Dir.chdir(tmpdir) { yield self }
     ensure
-      ignore_interrupts { rm_rf(tmpdir) } unless retain?
+      ignore_interrupts { chmod_rm_rf(tmpdir) } unless retain?
     end
   ensure
     ohai "Temporary files retained at:", @tmpdir.to_s if retain? && !@tmpdir.nil? && !@quiet
+  end
+
+  private
+
+  def chmod_rm_rf(path)
+    if path.directory? && !path.symlink?
+      chmod("u+rw", path) if path.owned? # Need permissions in order to see the contents
+      path.children.each { |child| chmod_rm_rf(child) }
+      rmdir(path)
+    else
+      rm_f(path)
+    end
+  rescue
+    nil # Just skip this directory.
   end
 end

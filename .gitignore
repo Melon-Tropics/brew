@@ -14,6 +14,7 @@
 /Library/Homebrew/test/.gem
 /Library/Homebrew/test/.subversion
 /Library/Homebrew/test/coverage
+/Library/Homebrew/test/junit
 /Library/Homebrew/test/fs_leak_log
 /Library/Homebrew/vendor/portable-ruby
 /Library/Taps
@@ -31,6 +32,9 @@
 **/vendor/bundle/ruby/*/extensions
 **/vendor/bundle/ruby/*/gems/*/*
 **/vendor/bundle/ruby/*/specifications
+
+# Ignore YARD files
+**/.yardoc
 
 # Unignore vendored gems
 !**/vendor/bundle/ruby/*/gems/*/lib
@@ -92,15 +96,17 @@
 **/vendor/bundle/ruby/*/gems/colorize-*/
 **/vendor/bundle/ruby/*/gems/commander-*/
 **/vendor/bundle/ruby/*/gems/connection_pool-*/
-**/vendor/bundle/ruby/*/gems/codecov-*/
 **/vendor/bundle/ruby/*/gems/diff-lcs-*/
 **/vendor/bundle/ruby/*/gems/docile-*/
 **/vendor/bundle/ruby/*/gems/domain_name-*/
+**/vendor/bundle/ruby/*/gems/ecma-re-validator-*/
+**/vendor/bundle/ruby/*/gems/hana-*/
 **/vendor/bundle/ruby/*/gems/highline-*/
 **/vendor/bundle/ruby/*/gems/http-cookie-*/
 **/vendor/bundle/ruby/*/gems/hpricot-*/
 **/vendor/bundle/ruby/*/gems/jaro_winkler-*/
 **/vendor/bundle/ruby/*/gems/json-*/
+**/vendor/bundle/ruby/*/gems/json_schemer-*/
 **/vendor/bundle/ruby/*/gems/method_source-*/
 **/vendor/bundle/ruby/*/gems/mime-types-data-*/
 **/vendor/bundle/ruby/*/gems/mime-types-*/
@@ -121,6 +127,7 @@
 **/vendor/bundle/ruby/*/gems/pry-*/
 **/vendor/bundle/ruby/*/gems/racc-*/
 **/vendor/bundle/ruby/*/gems/rainbow-*/
+**/vendor/bundle/ruby/*/gems/rbi-*/
 **/vendor/bundle/ruby/*/gems/rdiscount-*/
 **/vendor/bundle/ruby/*/gems/regexp_parser-*/
 **/vendor/bundle/ruby/*/gems/rexml-*/
@@ -128,6 +135,7 @@
 **/vendor/bundle/ruby/*/gems/rspec-*/
 **/vendor/bundle/ruby/*/gems/rspec-core-*/
 **/vendor/bundle/ruby/*/gems/rspec-expectations-*/
+**/vendor/bundle/ruby/*/gems/rspec_junit_formatter-*/
 **/vendor/bundle/ruby/*/gems/rspec-its-*/
 **/vendor/bundle/ruby/*/gems/rspec-mocks-*/
 **/vendor/bundle/ruby/*/gems/rspec-retry-*/
@@ -150,6 +158,8 @@
 **/vendor/bundle/ruby/*/gems/unf_ext-*/
 **/vendor/bundle/ruby/*/gems/unf-*/
 **/vendor/bundle/ruby/*/gems/unicode-display_width-*/
+**/vendor/bundle/ruby/*/gems/unparser-*/
+**/vendor/bundle/ruby/*/gems/uri_template-*/
 **/vendor/bundle/ruby/*/gems/webrobots-*/
 
 # Ignore `bin` contents (again).
@@ -186,5 +196,7 @@
 # Unignore tests' bundle config
 !/Library/Homebrew/test/.bundle/config
 
-# Unignore vscode configuration
+# Unignore editor configuration
+!/.sublime
+/.sublime/homebrew.sublime-workspace
 !/.vscode

@@ -29,6 +29,13 @@ module Superenv
     base.run_time_deps = []
   end
 
+  # The location of Homebrew's shims on this OS.
+  # @public
+  sig { returns(Pathname) }
+  def self.shims_path
+    HOMEBREW_SHIMS_PATH/"super"
+  end
+
   # @private
   sig { returns(T.nilable(Pathname)) }
   def self.bin; end
@@ -44,13 +51,14 @@ module Superenv
   # @private
   sig {
     params(
-      formula:      T.nilable(Formula),
-      cc:           T.nilable(String),
-      build_bottle: T.nilable(T::Boolean),
-      bottle_arch:  T.nilable(T::Boolean),
+      formula:         T.nilable(Formula),
+      cc:              T.nilable(String),
+      build_bottle:    T.nilable(T::Boolean),
+      bottle_arch:     T.nilable(String),
+      testing_formula: T::Boolean,
     ).void
   }
-  def setup_build_environment(formula: nil, cc: nil, build_bottle: false, bottle_arch: nil)
+  def setup_build_environment(formula: nil, cc: nil, build_bottle: false, bottle_arch: nil, testing_formula: false)
     super
     send(compiler)
 
@@ -73,7 +81,7 @@ module Superenv
     self["CMAKE_INCLUDE_PATH"] = determine_cmake_include_path
     self["CMAKE_LIBRARY_PATH"] = determine_cmake_library_path
     self["ACLOCAL_PATH"] = determine_aclocal_path
-    self["M4"] = DevelopmentTools.locate("m4") if deps.any? { |d| d.name == "autoconf" }
+    self["M4"] = "#{HOMEBREW_PREFIX}/opt/m4/bin/m4" if deps.any? { |d| d.name == "libtool" }
     self["HOMEBREW_ISYSTEM_PATHS"] = determine_isystem_paths
     self["HOMEBREW_INCLUDE_PATHS"] = determine_include_paths
     self["HOMEBREW_LIBRARY_PATHS"] = determine_library_paths
@@ -90,10 +98,11 @@ module Superenv
     # g - Enable "-stdlib=libc++" for clang.
     # h - Enable "-stdlib=libstdc++" for clang.
     # K - Don't strip -arch <arch>, -m32, or -m64
+    # d - Don't strip -march=<target>. Use only in formulae that
+    #     have runtime detection of CPU features.
     # w - Pass -no_weak_imports to the linker
     #
     # These flags will also be present:
-    # s - apply fix for sed's Unicode support
     # a - apply fix for apr-1-config path
   end
   alias generic_setup_build_environment setup_build_environment
@@ -198,10 +207,23 @@ module Superenv
 
   sig { returns(T.nilable(PATH)) }
   def determine_library_paths
-    paths = [
-      keg_only_deps.map(&:opt_lib),
-      HOMEBREW_PREFIX/"lib",
-    ]
+    paths = []
+    if compiler.match?(GNU_GCC_REGEXP)
+      # Add path to GCC runtime libs for version being used to compile,
+      # so that the linker will find those libs before any that may be linked in $HOMEBREW_PREFIX/lib.
+      # https://github.com/Homebrew/brew/pull/11459#issuecomment-851075936
+      begin
+        f = gcc_version_formula(compiler.to_s)
+      rescue FormulaUnavailableError
+        nil
+      else
+        paths << f.opt_lib/"gcc"/f.version.major if f.any_version_installed?
+      end
+    end
+
+    paths << keg_only_deps.map(&:opt_lib)
+    paths << HOMEBREW_PREFIX/"lib"
+
     paths += homebrew_extra_library_paths
     PATH.new(paths).existing
   end
@@ -260,6 +282,9 @@ module Superenv
   sig { returns(String) }
   def determine_optflags
     Hardware::CPU.optimization_flags.fetch(effective_arch)
+  rescue KeyError
+    odebug "Building a bottle for custom architecture (#{effective_arch})..."
+    Hardware::CPU.arch_flag(effective_arch)
   end
 
   sig { returns(String) }
@@ -293,31 +318,13 @@ module Superenv
   end
 
   sig { void }
-  def universal_binary
-    odisabled "ENV.universal_binary"
-
-    check_for_compiler_universal_support
-
-    self["HOMEBREW_ARCHFLAGS"] = Hardware::CPU.universal_archs.as_arch_flags
-  end
-
-  sig { void }
   def permit_arch_flags
     append_to_cccfg "K"
   end
 
   sig { void }
-  def m32
-    odisabled "ENV.m32"
-
-    append "HOMEBREW_ARCHFLAGS", "-m32"
-  end
-
-  sig { void }
-  def m64
-    odisabled "ENV.m64"
-
-    append "HOMEBREW_ARCHFLAGS", "-m64"
+  def runtime_cpu_detection
+    append_to_cccfg "d"
   end
 
   sig { void }
@@ -331,31 +338,32 @@ module Superenv
     append_to_cccfg "g" if compiler == :clang
   end
 
-  sig { void }
-  def libstdcxx
-    odisabled "ENV.libstdcxx"
-
-    append_to_cccfg "h" if compiler == :clang
-  end
-
   # @private
   sig { void }
   def refurbish_args
     append_to_cccfg "O"
   end
 
-  %w[O3 O2 O1 O0 Os].each do |opt|
-    define_method opt do
-      odisabled "ENV.#{opt}"
-
-      send(:[]=, "HOMEBREW_OPTIMIZATION_LEVEL", opt)
+  # rubocop: disable Naming/MethodName
+  # Fixes style error `Naming/MethodName: Use snake_case for method names.`
+  sig { params(block: T.nilable(T.proc.void)).void }
+  def O0(&block)
+    if block
+      with_env(HOMEBREW_OPTIMIZATION_LEVEL: "O0", &block)
+    else
+      self["HOMEBREW_OPTIMIZATION_LEVEL"] = "O0"
     end
   end
 
-  sig { void }
-  def set_x11_env_if_installed
-    odisabled "ENV.set_x11_env_if_installed"
+  sig { params(block: T.nilable(T.proc.void)).void }
+  def O1(&block)
+    if block
+      with_env(HOMEBREW_OPTIMIZATION_LEVEL: "O1", &block)
+    else
+      self["HOMEBREW_OPTIMIZATION_LEVEL"] = "O1"
+    end
   end
+  # rubocop: enable Naming/MethodName
 end
 
 require "extend/os/extend/ENV/super"

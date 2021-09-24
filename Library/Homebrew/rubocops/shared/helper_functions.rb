@@ -3,6 +3,11 @@
 
 require "rubocop"
 
+require_relative "../../warnings"
+Warnings.ignore :parser_syntax do
+  require "parser/current"
+end
+
 module RuboCop
   module Cop
     # Helper functions for cops.
@@ -54,7 +59,7 @@ module RuboCop
       end
 
       # Returns the string representation if node is of type str(plain) or dstr(interpolated) or const.
-      def string_content(node)
+      def string_content(node, strip_dynamic: false)
         case node.type
         when :str
           node.str_content
@@ -62,12 +67,21 @@ module RuboCop
           content = ""
           node.each_child_node(:str, :begin) do |child|
             content += if child.begin_type?
-              child.source
+              strip_dynamic ? "" : child.source
             else
               child.str_content
             end
           end
           content
+        when :send
+          if node.method?(:+) && (node.receiver.str_type? || node.receiver.dstr_type?)
+            content = string_content(node.receiver)
+            arg = node.arguments.first
+            content += string_content(arg) if arg
+            content
+          else
+            ""
+          end
         when :const
           node.const_name
         when :sym
@@ -104,8 +118,10 @@ module RuboCop
         nil
       end
 
-      # Sets the given node as the offending node when required in custom cops.
-      def offending_node(node)
+      # Gets/sets the given node as the offending node when required in custom cops.
+      def offending_node(node = nil)
+        return @offensive_node if node.nil?
+
         @offensive_node = node
       end
 

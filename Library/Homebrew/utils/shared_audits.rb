@@ -17,17 +17,18 @@ module SharedAudits
     @github_repo_data["#{user}/#{repo}"] ||= GitHub.repository(user, repo)
 
     @github_repo_data["#{user}/#{repo}"]
-  rescue GitHub::HTTPNotFoundError
+  rescue GitHub::API::HTTPNotFoundError
     nil
   end
 
   def github_release_data(user, repo, tag)
     id = "#{user}/#{repo}/#{tag}"
+    url = "#{GitHub::API_URL}/repos/#{user}/#{repo}/releases/tags/#{tag}"
     @github_release_data ||= {}
-    @github_release_data[id] ||= GitHub.open_api("#{GitHub::API_URL}/repos/#{user}/#{repo}/releases/tags/#{tag}")
+    @github_release_data[id] ||= GitHub::API.open_rest(url)
 
     @github_release_data[id]
-  rescue GitHub::HTTPNotFoundError
+  rescue GitHub::API::HTTPNotFoundError
     nil
   end
 
@@ -73,7 +74,7 @@ module SharedAudits
     release = gitlab_release_data(user, repo, tag)
     return unless release
 
-    return if Date.parse(release["released_at"]) <= Date.today
+    return if DateTime.parse(release["released_at"]) <= DateTime.now
 
     exception, version = if formula
       [tap_audit_exception(:gitlab_prerelease_allowlist, formula.tap, formula.name), formula.version]

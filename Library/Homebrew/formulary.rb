@@ -4,6 +4,7 @@
 require "digest/md5"
 require "extend/cachable"
 require "tab"
+require "utils/bottles"
 
 # The {Formulary} is responsible for creating instances of {Formula}.
 # It is not meant to be used directly from formulae.
@@ -33,22 +34,62 @@ module Formulary
     cache.fetch(path)
   end
 
-  def self.load_formula(name, path, contents, namespace, flags:)
+  def self.clear_cache
+    cache.each do |key, klass|
+      next if key == :formulary_factory
+
+      namespace = klass.name.deconstantize
+      next if namespace.deconstantize != name
+
+      remove_const(namespace.demodulize)
+    end
+
+    super
+  end
+
+  # @private
+  module PathnameWriteMkpath
+    refine Pathname do
+      def write(content, offset = nil, **open_args)
+        raise "Will not overwrite #{self}" if exist? && !offset && !open_args[:mode]&.match?(/^a\+?$/)
+
+        dirname.mkpath
+
+        super
+      end
+    end
+  end
+
+  using PathnameWriteMkpath
+  def self.load_formula(name, path, contents, namespace, flags:, ignore_errors:)
     raise "Formula loading disabled by HOMEBREW_DISABLE_LOAD_FORMULA!" if Homebrew::EnvConfig.disable_load_formula?
 
     require "formula"
+    require "ignorable"
 
     mod = Module.new
+    remove_const(namespace) if const_defined?(namespace)
     const_set(namespace, mod)
 
-    begin
+    eval_formula = lambda do
       # Set `BUILD_FLAGS` in the formula's namespace so we can
       # access them from within the formula's class scope.
       mod.const_set(:BUILD_FLAGS, flags)
       mod.module_eval(contents, path)
-    rescue NameError, ArgumentError, ScriptError, MethodDeprecatedError => e
-      raise FormulaUnreadableError.new(name, e)
+    rescue NameError, ArgumentError, ScriptError, MethodDeprecatedError, MacOSVersionError => e
+      if e.is_a?(Ignorable::ExceptionMixin)
+        e.ignore
+      else
+        remove_const(namespace)
+        raise FormulaUnreadableError.new(name, e)
+      end
     end
+    if ignore_errors
+      Ignorable.hook_raise(&eval_formula)
+    else
+      eval_formula.call
+    end
+
     class_name = class_s(name)
 
     begin
@@ -58,14 +99,15 @@ module Formulary
                       .map { |const_name| mod.const_get(const_name) }
                       .select { |const| const.is_a?(Class) }
       new_exception = FormulaClassUnavailableError.new(name, path, class_name, class_list)
+      remove_const(namespace)
       raise new_exception, "", e.backtrace
     end
   end
 
-  def self.load_formula_from_path(name, path, flags:)
+  def self.load_formula_from_path(name, path, flags:, ignore_errors:)
     contents = path.open("r") { |f| ensure_utf8_encoding(f).read }
     namespace = "FormulaNamespace#{Digest::MD5.hexdigest(path.to_s)}"
-    klass = load_formula(name, path, contents, namespace, flags: flags)
+    klass = load_formula(name, path, contents, namespace, flags: flags, ignore_errors: ignore_errors)
     cache[path] = klass
   end
 
@@ -133,23 +175,24 @@ module Formulary
     # Gets the formula instance.
     # `alias_path` can be overridden here in case an alias was used to refer to
     # a formula that was loaded in another way.
-    def get_formula(spec, alias_path: nil, force_bottle: false, flags: [])
+    def get_formula(spec, alias_path: nil, force_bottle: false, flags: [], ignore_errors: false)
       alias_path ||= self.alias_path
-      klass(flags: flags).new(name, path, spec, alias_path: alias_path, force_bottle: force_bottle)
+      klass(flags: flags, ignore_errors: ignore_errors)
+        .new(name, path, spec, alias_path: alias_path, force_bottle: force_bottle)
     end
 
-    def klass(flags:)
-      load_file(flags: flags) unless Formulary.formula_class_defined?(path)
+    def klass(flags:, ignore_errors:)
+      load_file(flags: flags, ignore_errors: ignore_errors) unless Formulary.formula_class_defined?(path)
       Formulary.formula_class_get(path)
     end
 
     private
 
-    def load_file(flags:)
+    def load_file(flags:, ignore_errors:)
       $stderr.puts "#{$PROGRAM_NAME} (#{self.class.name}): loading #{path}" if debug?
       raise FormulaUnavailableError, name unless path.file?
 
-      Formulary.load_formula_from_path(name, path, flags: flags)
+      Formulary.load_formula_from_path(name, path, flags: flags, ignore_errors: ignore_errors)
     end
   end
 
@@ -174,14 +217,21 @@ module Formulary
       super name, Formulary.path(full_name)
     end
 
-    def get_formula(spec, force_bottle: false, flags: [], **)
-      contents = Utils::Bottles.formula_contents @bottle_filename, name: name
+    def get_formula(spec, force_bottle: false, flags: [], ignore_errors: false, **)
       formula = begin
-        Formulary.from_contents(name, path, contents, spec, force_bottle: force_bottle, flags: flags)
+        contents = Utils::Bottles.formula_contents @bottle_filename, name: name
+        Formulary.from_contents(name, path, contents, spec, force_bottle: force_bottle,
+                                flags: flags, ignore_errors: ignore_errors)
       rescue FormulaUnreadableError => e
         opoo <<~EOS
           Unreadable formula in #{@bottle_filename}:
           #{e}
+        EOS
+        super
+      rescue BottleFormulaUnavailableError => e
+        opoo <<~EOS
+          #{e}
+          Falling back to non-bottle formula.
         EOS
         super
       end
@@ -222,10 +272,10 @@ module Formulary
       super formula, HOMEBREW_CACHE_FORMULA/File.basename(uri.path)
     end
 
-    def load_file(flags:)
-      if %r{githubusercontent.com/[\w-]+/[\w-]+/[a-f0-9]{40}(?:/Formula)?/(?<formula_name>[\w+-.@]+).rb} =~ url # rubocop:disable Style/CaseLikeIf
+    def load_file(flags:, ignore_errors:)
+      if %r{githubusercontent.com/[\w-]+/[\w-]+/[a-f0-9]{40}(?:/Formula)?/(?<formula_name>[\w+-.@]+).rb} =~ url
         raise UsageError, "Installation of #{formula_name} from a GitHub commit URL is unsupported! " \
-                  "`brew extract #{formula_name}` to a stable tap on GitHub instead."
+                          "`brew extract #{formula_name}` to a stable tap on GitHub instead."
       elsif url.match?(%r{^(https?|ftp)://})
         raise UsageError, "Non-checksummed download of #{name} formula file from an arbitrary URL is unsupported! ",
               "`brew extract` or `brew create` and `brew tap-new` to create a "\
@@ -286,7 +336,7 @@ module Formulary
       [name, path]
     end
 
-    def get_formula(spec, alias_path: nil, force_bottle: false, flags: [])
+    def get_formula(spec, alias_path: nil, force_bottle: false, flags: [], ignore_errors: false)
       super
     rescue FormulaUnreadableError => e
       raise TapFormulaUnreadableError.new(tap, name, e.formula_error), "", e.backtrace
@@ -296,7 +346,7 @@ module Formulary
       raise TapFormulaUnavailableError.new(tap, name), "", e.backtrace
     end
 
-    def load_file(flags:)
+    def load_file(flags:, ignore_errors:)
       super
     rescue MethodDeprecatedError => e
       e.issues_url = tap.issues_url || tap.to_s
@@ -311,6 +361,10 @@ module Formulary
     end
 
     def get_formula(*)
+      if !CoreTap.instance.installed? && ENV["HOMEBREW_INSTALL_FROM_API"].present?
+        raise CoreTapFormulaUnavailableError, name
+      end
+
       raise FormulaUnavailableError, name
     end
   end
@@ -325,10 +379,10 @@ module Formulary
       super name, path
     end
 
-    def klass(flags:)
+    def klass(flags:, ignore_errors:)
       $stderr.puts "#{$PROGRAM_NAME} (#{self.class.name}): loading #{path}" if debug?
       namespace = "FormulaNamespace#{Digest::MD5.hexdigest(contents.to_s)}"
-      Formulary.load_formula(name, path, contents, namespace, flags: flags)
+      Formulary.load_formula(name, path, contents, namespace, flags: flags, ignore_errors: ignore_errors)
     end
   end
 
@@ -339,8 +393,17 @@ module Formulary
   # * a formula pathname
   # * a formula URL
   # * a local bottle reference
-  def self.factory(ref, spec = :stable, alias_path: nil, from: nil, force_bottle: false, flags: [])
+  def self.factory(
+    ref, spec = :stable, alias_path: nil, from: nil,
+    force_bottle: false, flags: [], ignore_errors: false
+  )
     raise ArgumentError, "Formulae must have a ref!" unless ref
+
+    if ENV["HOMEBREW_INSTALL_FROM_API"].present? &&
+       @formula_name_local_bottle_path_map.present? &&
+       @formula_name_local_bottle_path_map.key?(ref)
+      ref = @formula_name_local_bottle_path_map[ref]
+    end
 
     cache_key = "#{ref}-#{spec}-#{alias_path}-#{from}"
     if factory_cached? && cache[:formulary_factory] &&
@@ -349,12 +412,31 @@ module Formulary
     end
 
     formula = loader_for(ref, from: from).get_formula(spec, alias_path: alias_path,
-                                                      force_bottle: force_bottle, flags: flags)
+                                                      force_bottle: force_bottle, flags: flags,
+                                                      ignore_errors: ignore_errors)
     if factory_cached?
       cache[:formulary_factory] ||= {}
       cache[:formulary_factory][cache_key] ||= formula
     end
     formula
+  end
+
+  # Map a formula name to a local/fetched bottle archive. This mapping will be used by {Formulary::factory}
+  # to allow formulae to be loaded automatically from their local bottle archive without
+  # needing to exist in a tap or be passed as a complete path. For example,
+  # to map `hello` from its bottle archive:
+  # <pre>Formulary.map_formula_name_to_local_bottle_path "hello", HOMEBREW_CACHE/"hello--2.10"
+  # Formulary.factory "hello" # returns the hello formula from the local bottle archive
+  # </pre>
+  # @param formula_name the formula name string to map.
+  # @param local_bottle_path a path pointing to the target bottle archive.
+  def self.map_formula_name_to_local_bottle_path(formula_name, local_bottle_path)
+    if ENV["HOMEBREW_INSTALL_FROM_API"].blank?
+      raise UsageError, "HOMEBREW_INSTALL_FROM_API not set but required for #{__method__}!"
+    end
+
+    @formula_name_local_bottle_path_map ||= {}
+    @formula_name_local_bottle_path_map[formula_name] = Pathname(local_bottle_path).realpath
   end
 
   # Return a {Formula} instance for the given rack.
@@ -410,9 +492,13 @@ module Formulary
   end
 
   # Return a {Formula} instance directly from contents.
-  def self.from_contents(name, path, contents, spec = :stable, alias_path: nil, force_bottle: false, flags: [])
+  def self.from_contents(
+    name, path, contents, spec = :stable, alias_path: nil,
+    force_bottle: false, flags: [], ignore_errors: false
+  )
     FormulaContentsLoader.new(name, path, contents)
-                         .get_formula(spec, alias_path: alias_path, force_bottle: force_bottle, flags: flags)
+                         .get_formula(spec, alias_path: alias_path, force_bottle: force_bottle,
+                                      flags: flags, ignore_errors: ignore_errors)
   end
 
   def self.to_rack(ref)
@@ -442,7 +528,7 @@ module Formulary
 
   def self.loader_for(ref, from: nil)
     case ref
-    when Pathname::BOTTLE_EXTNAME_RX
+    when HOMEBREW_BOTTLES_EXTNAME_REGEX
       return BottleLoader.new(ref)
     when URL_START_REGEX
       return FromUrlLoader.new(ref)
@@ -467,14 +553,14 @@ module Formulary
       return FormulaLoader.new(name, path)
     end
 
-    if newref = CoreTap.instance.formula_renames[ref]
+    if (newref = CoreTap.instance.formula_renames[ref])
       formula_with_that_oldname = core_path(newref)
       return FormulaLoader.new(newref, formula_with_that_oldname) if formula_with_that_oldname.file?
     end
 
     possible_tap_newname_formulae = []
     Tap.each do |tap|
-      if newref = tap.formula_renames[ref]
+      if (newref = tap.formula_renames[ref])
         possible_tap_newname_formulae << "#{tap.name}/#{newref}"
       end
     end
@@ -502,11 +588,11 @@ module Formulary
     name = name.to_s.downcase
     taps.map do |tap|
       Pathname.glob([
-                      "#{tap}Formula/#{name}.rb",
-                      "#{tap}HomebrewFormula/#{name}.rb",
-                      "#{tap}#{name}.rb",
-                      "#{tap}Aliases/#{name}",
-                    ]).find(&:file?)
+        "#{tap}Formula/#{name}.rb",
+        "#{tap}HomebrewFormula/#{name}.rb",
+        "#{tap}#{name}.rb",
+        "#{tap}Aliases/#{name}",
+      ]).find(&:file?)
     end.compact
   end
 end

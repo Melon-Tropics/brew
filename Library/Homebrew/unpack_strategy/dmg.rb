@@ -13,18 +13,18 @@ module UnpackStrategy
     # Helper module for listing the contents of a volume mounted from a disk image.
     module Bom
       DMG_METADATA = Set.new(%w[
-                               .background
-                               .com.apple.timemachine.donotpresent
-                               .com.apple.timemachine.supported
-                               .DocumentRevisions-V100
-                               .DS_Store
-                               .fseventsd
-                               .MobileBackups
-                               .Spotlight-V100
-                               .TemporaryItems
-                               .Trashes
-                               .VolumeIcon.icns
-                             ]).freeze
+        .background
+        .com.apple.timemachine.donotpresent
+        .com.apple.timemachine.supported
+        .DocumentRevisions-V100
+        .DS_Store
+        .fseventsd
+        .MobileBackups
+        .Spotlight-V100
+        .TemporaryItems
+        .Trashes
+        .VolumeIcon.icns
+      ]).freeze
       private_constant :DMG_METADATA
 
       refine Pathname do
@@ -87,10 +87,27 @@ module UnpackStrategy
         return unless path.exist?
 
         if tries > 1
-          system_command! "diskutil",
-                          args:         ["eject", path],
-                          print_stderr: false,
-                          verbose:      verbose
+          disk_info = system_command!(
+            "diskutil",
+            args:         ["info", "-plist", path],
+            print_stderr: false,
+            verbose:      verbose,
+          )
+
+          # For HFS, just use <mount-path>
+          # For APFS, find the <physical-store> corresponding to <mount-path>
+          eject_paths = disk_info.plist
+                                 .fetch("APFSPhysicalStores", [])
+                                 .map { |store| store["APFSPhysicalStore"] }
+                                 .compact
+                                 .presence || [path]
+
+          eject_paths.each do |eject_path|
+            system_command! "diskutil",
+                            args:         ["eject", eject_path],
+                            print_stderr: false,
+                            verbose:      verbose
+          end
         else
           system_command! "diskutil",
                           args:         ["unmount", "force", path],
